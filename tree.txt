@@ -1,0 +1,253 @@
+Структура папок тома Windows
+Серийный номер тома: 6608-18CE
+C:.
+|   .env
+|   .gitignore
+|   LICENSE
+|   main.py
+|   None
+|   python
+|   README.md
+|   requirements.txt
+|   str
+|   tarot_bot.log
+|   test_imports.py
+|   tree.txt
+|   буфер.txt
+|   
++---data
+|   |   tarot_deck.json
+|   |   users.db
+|   |   
+|   \---images
+|       +---major
+|       |       chariot.jpg
+|       |       death.jpg
+|       |       devil.jpg
+|       |       emperor.jpg
+|       |       empress.jpg
+|       |       fool.jpg
+|       |       hanged_man.jpg
+|       |       hermit.jpg
+|       |       hierophant.jpg
+|       |       high_priestess.jpg
+|       |       judgement.jpg
+|       |       justice.jpg
+|       |       lovers.jpg
+|       |       magician.jpg
+|       |       moon.jpg
+|       |       star.jpg
+|       |       strength.jpg
+|       |       sun.jpg
+|       |       temperance.jpg
+|       |       tower.jpg
+|       |       wheel_of_fortune.jpg
+|       |       world.jpg
+|       |       
+|       \---minor
+|               cups_ace.jpg
+|               cups_eight.jpg
+|               cups_five.jpg
+|               cups_four.jpg
+|               cups_king.jpg
+|               cups_knight.jpg
+|               cups_nine.jpg
+|               cups_page.jpg
+|               cups_queen.jpg
+|               cups_seven.jpg
+|               cups_six.jpg
+|               cups_ten.jpg
+|               cups_three.jpg
+|               cups_two.jpg
+|               pentacles_ace.jpg
+|               pentacles_eight.jpg
+|               pentacles_five.jpg
+|               pentacles_four.jpg
+|               pentacles_king.jpg
+|               pentacles_knight.jpg
+|               pentacles_nine.jpg
+|               pentacles_page.jpg
+|               pentacles_queen.jpg
+|               pentacles_seven.jpg
+|               pentacles_six.jpg
+|               pentacles_ten.jpg
+|               pentacles_three.jpg
+|               pentacles_two.jpg
+|               swords_ace.jpg
+|               swords_eight.jpg
+|               swords_five.jpg
+|               swords_four.jpg
+|               swords_king.jpg
+|               swords_knight.jpg
+|               swords_nine.jpg
+|               swords_page.jpg
+|               swords_queen.jpg
+|               swords_seven.jpg
+|               swords_six.jpg
+|               swords_ten.jpg
+|               swords_three.jpg
+|               swords_two.jpg
+|               wands_ace.jpg
+|               wands_eight.jpg
+|               wands_five.jpg
+|               wands_four.jpg
+|               wands_king.jpg
+|               wands_knight.jpg
+|               wands_nine.jpg
+|               wands_page.jpg
+|               wands_queen.jpg
+|               wands_seven.jpg
+|               wands_six.jpg
+|               wands_ten.jpg
+|               wands_three.jpg
+|               wands_two.jpg
+|               
++---images
+|   +---major
+|   |       chariot.jpg
+|   |       death.jpg
+|   |       devil.jpg
+|   |       emperor.jpg
+|   |       empress.jpg
+|   |       fool.jpg
+|   |       hanged_man.jpg
+|   |       hermit.jpg
+|   |       hierophant.jpg
+|   |       high_priestess.jpg
+|   |       judgement.jpg
+|   |       justice.jpg
+|   |       lovers.jpg
+|   |       magician.jpg
+|   |       moon.jpg
+|   |       star.jpg
+|   |       strength.jpg
+|   |       sun.jpg
+|   |       temperance.jpg
+|   |       tower.jpg
+|   |       wheel_of_fortune.jpg
+|   |       world.jpg
+|   |       
+|   \---minor
+|           cups_ace.jpg
+|           cups_eight.jpg
+|           cups_five.jpg
+|           cups_four.jpg
+|           cups_king.jpg
+|           cups_knight.jpg
+|           cups_nine.jpg
+|           cups_page.jpg
+|           cups_queen.jpg
+|           cups_seven.jpg
+|           cups_six.jpg
+|           cups_ten.jpg
+|           cups_three.jpg
+|           cups_two.jpg
+|           pentacles_ace.jpg
+|           pentacles_eight.jpg
+|           pentacles_five.jpg
+|           pentacles_four.jpg
+|           pentacles_king.jpg
+|           pentacles_knight.jpg
+|           pentacles_nine.jpg
+|           pentacles_page.jpg
+|           pentacles_queen.jpg
+|           pentacles_seven.jpg
+|           pentacles_six.jpg
+|           pentacles_ten.jpg
+|           pentacles_three.jpg
+|           pentacles_two.jpg
+|           swords_ace.jpg
+|           swords_eight.jpg
+|           swords_five.jpg
+|           swords_four.jpg
+|           swords_king.jpg
+|           swords_knight.jpg
+|           swords_nine.jpg
+|           swords_page.jpg
+|           swords_queen.jpg
+|           swords_seven.jpg
+|           swords_six.jpg
+|           swords_ten.jpg
+|           swords_three.jpg
+|           swords_two.jpg
+|           wands_ace.jpg
+|           wands_eight.jpg
+|           wands_five.jpg
+|           wands_four.jpg
+|           wands_king.jpg
+|           wands_knight.jpg
+|           wands_nine.jpg
+|           wands_page.jpg
+|           wands_queen.jpg
+|           wands_seven.jpg
+|           wands_six.jpg
+|           wands_ten.jpg
+|           wands_three.jpg
+|           wands_two.jpg
+|           
+\---src
+    |   ai_interpreter.py
+    |   ai_interpreter_backup.py
+    |   bot_main.py
+    |   bot_main_backup.py
+    |   config.py
+    |   keyboards.py
+    |   tarot_engine.py
+    |   user_database.py
+    |   __init__.py
+    |   
+    +---handlers
+    |   |   callback_handlers.py
+    |   |   command_handlers.py
+    |   |   error_handlers.py
+    |   |   message_handlers.py
+    |   |   __init__.py
+    |   |   
+    |   \---__pycache__
+    |           callback_handlers.cpython-313.pyc
+    |           command_handlers.cpython-313.pyc
+    |           error_handlers.cpython-313.pyc
+    |           message_handlers.cpython-313.pyc
+    |           __init__.cpython-313.pyc
+    |           
+    +---models
+    |   |   user_context.py
+    |   |   __init__.py
+    |   |   
+    |   \---__pycache__
+    |           user_context.cpython-313.pyc
+    |           __init__.cpython-313.pyc
+    |           
+    +---services
+    |   |   ai_service.py
+    |   |   card_service.py
+    |   |   history_service.py
+    |   |   profile_service.py
+    |   |   __init__.py
+    |   |   
+    |   \---__pycache__
+    |           ai_service.cpython-313.pyc
+    |           card_service.cpython-313.pyc
+    |           history_service.cpython-313.pyc
+    |           profile_service.cpython-313.pyc
+    |           __init__.cpython-313.pyc
+    |           
+    +---utils
+    |   |   formatters.py
+    |   |   validators.py
+    |   |   __init__.py
+    |   |   
+    |   \---__pycache__
+    |           formatters.cpython-313.pyc
+    |           validators.cpython-313.pyc
+    |           __init__.cpython-313.pyc
+    |           
+    \---__pycache__
+            ai_interpreter.cpython-313.pyc
+            bot_main.cpython-313.pyc
+            config.cpython-313.pyc
+            keyboards.cpython-313.pyc
+            tarot_engine.cpython-313.pyc
+            user_database.cpython-313.pyc
+            __init__.cpython-313.pyc
+            

@@ -1,0 +1,197 @@
+7) src/keyboards.py
+# 📋 ИНФОРМАЦИЯ О INLINE-КЛАВИАТУРАХ В `src/keyboards.py`
+
+## 📊 ВСЕ ФУНКЦИИ, ВОЗВРАЩАЮЩИЕ `InlineKeyboardMarkup`
+
+### 🏠 **ГЛАВНОЕ МЕНЮ И НАВИГАЦИЯ**
+```python
+def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 4 кнопки в 2 строках  
+**Callback_data:** `spread_single`, `spread_three`, `show_history`, `profile`
+
+```python
+def get_back_to_menu_inline_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 1 кнопка  
+**Callback_data:** `main_menu`
+
+```python
+def get_back_to_history_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 2 кнопки  
+**Callback_data:** `back_to_history`, `main_menu`
+
+### 🎴 **РАСКЛАДЫ И КАРТЫ**
+```python
+def get_spread_selection_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 3 кнопки  
+**Callback_data:** `spread_single`, `spread_three`, `main_menu`
+
+```python
+def get_card_selection_keyboard(
+    session_id: str, 
+    current_position: int = 1, 
+    total_positions: int = 1
+) -> InlineKeyboardMarkup
+```
+**Параметры:** `session_id`, `current_position`, `total_positions`  
+**Кнопки:** 5 кнопок выбора + опциональная кнопка возврата  
+**Callback_data:** `card_choice:{session_id}:{position}:{number}`, `back_to_select:{session_id}:{position}`
+
+```python
+def get_continue_selection_keyboard(
+    session_id: str, 
+    next_position: int
+) -> InlineKeyboardMarkup
+```
+**Параметры:** `session_id`, `next_position`  
+**Кнопки:** 2 кнопки  
+**Callback_data:** `continue_select:{session_id}:{next_position}`, `back_to_select:{session_id}:{position}`
+
+```python
+def get_back_to_selection_keyboard(
+    session_id: str, 
+    position: int
+) -> InlineKeyboardMarkup
+```
+**Параметры:** `session_id`, `position`  
+**Кнопки:** 1 кнопка  
+**Callback_data:** `back_to_select:{session_id}:{position}`
+
+### 📖 **ИСТОРИЯ РАСКЛАДОВ**
+```python
+def get_history_list_keyboard(page_spreads: List[Dict]) -> InlineKeyboardMarkup
+```
+**Параметры:** `page_spreads` (список раскладов)  
+**Кнопки:** Зависит от количества раскладов + 2 кнопки  
+**Callback_data:** `details_{spread_id}`, `clear_history`, `main_menu`
+
+```python
+def get_history_keyboard(
+    current_page: int, 
+    total_pages: int
+) -> InlineKeyboardMarkup
+```
+**Параметры:** `current_page`, `total_pages`  
+**Кнопки:** 2-3 кнопки навигации + 1 кнопка меню  
+**Callback_data:** `history_page_{number}`, `history_info`, `main_menu`
+
+```python
+def get_spread_details_keyboard(
+    spread_id: int, 
+    has_questions: bool = False
+) -> InlineKeyboardMarkup
+```
+**Параметры:** `spread_id`, `has_questions`  
+**Кнопки:** 3-4 кнопки  
+**Callback_data:** `ask_question_{spread_id}`, `view_questions_{spread_id}`, `back_to_history`, `main_menu`
+
+```python
+def get_details_back_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 2 кнопки  
+**Callback_data:** `back_to_history`, `main_menu`
+
+### ❓ **ВОПРОСЫ И ИНТЕРПРЕТАЦИЯ**
+```python
+def get_interpretation_keyboard(spread_id: int) -> InlineKeyboardMarkup
+```
+**Параметры:** `spread_id`  
+**Кнопки:** 3 кнопки  
+**Callback_data:** `ask_question_{spread_id}`, `show_history`, `main_menu`
+
+```python
+def get_categories_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 8 кнопок  
+**Callback_data:** `category_love`, `category_career`, `category_finance`, `category_relationships`, `category_growth`, `category_general`, `category_custom`, `main_menu`
+
+```python
+def get_cancel_question_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 1 кнопка  
+**Callback_data:** `cancel_custom_question`
+
+### 👤 **ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ**
+```python
+def get_profile_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 4 кнопки в 3 строках  
+**Callback_data:** `edit_birth_date`, `edit_gender`, `clear_profile`, `main_menu`
+
+```python
+def get_profile_keyboard_with_clear() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 4 кнопки  
+**Callback_data:** `edit_birth_date`, `edit_gender`, `clear_profile`, `main_menu`
+
+```python
+def get_gender_selection_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 4 кнопки  
+**Callback_data:** `gender_male`, `gender_female`, `gender_other`, `cancel_edit`
+
+### ⚡ **СЛУЖЕБНЫЕ КЛАВИАТУРЫ**
+```python
+def get_cancel_edit_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 1 кнопка  
+**Callback_data:** `cancel_edit`
+
+```python
+def get_cancel_edit_inline_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 1 кнопка  
+**Callback_data:** `cancel_edit`
+
+```python
+def get_clear_profile_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 1 кнопка  
+**Callback_data:** `clear_profile`
+
+```python
+def get_history_diagnostic_keyboard() -> InlineKeyboardMarkup
+```
+**Параметры:** Нет  
+**Кнопки:** 4 кнопки  
+**Callback_data:** `history_page_1`, `history_page_2`, `main_menu`, `test_callback`
+
+## 📈 **СТАТИСТИКА**
+
+- **Всего функций InlineKeyboardMarkup:** 21
+- **Функций ReplyKeyboardMarkup:** 3
+- **Уникальных callback_data паттернов:** 25+
+- **Самые используемые callback_data:** `main_menu` (в 15 функциях)
+
+## 🎯 **ОСНОВНЫЕ CALLBACK_DATA ПАТТЕРНЫ**
+
+```
+main_menu                    # Главное меню
+category_{name}              # Категории вопросов
+spread_single, spread_three  # Типы раскладов
+card_choice:{sid}:{pos}:{num} # Выбор карт
+details_{id}                 # Детали расклада
+history_page_{num}           # Пагинация истории
+ask_question_{id}            # Вопрос по раскладу
+edit_birth_date, edit_gender # Редактирование профиля
+gender_{type}                # Выбор пола
+cancel_*                     # Отмена операций
+```
+
+Все функции используют единый стандарт callback_data и готовы к использованию в обработчиках!
