@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from ...config import get_settings
+from ..settings import get_settings
 from ..api_response import APIResponse, APIError
 from .telegram_init_data import validate_init_data
 
