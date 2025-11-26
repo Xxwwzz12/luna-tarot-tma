@@ -9,7 +9,13 @@ import {
   askSpreadQuestion,
 } from "./api/client";
 
-// ——— Форматирование красивых дат ———
+import BottomNav from "./BottomNav";
+import HomeScreen from "./screens/HomeScreen";
+import SpreadsScreen from "./screens/SpreadsScreen";
+import HistoryScreen from "./screens/HistoryScreen";
+import ProfileScreen from "./screens/ProfileScreen";
+
+// Форматирование красивых дат
 function formatDate(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
@@ -24,21 +30,32 @@ function formatDate(dateStr) {
 }
 
 function App() {
+  // Тема приложения
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === "undefined") return "dark";
+    return localStorage.getItem("tma_theme") || "dark"; // "dark" | "light" | "system"
+  });
+
+  // Активная вкладка (нижняя навигация)
+  const [activeTab, setActiveTab] = useState("home"); // "home" | "spreads" | "history" | "profile"
+
+  // Профиль, расклады, текущий расклад
   const [profile, setProfile] = useState(null);
   const [spreads, setSpreads] = useState({ items: [] });
   const [currentSpread, setCurrentSpread] = useState(null);
+
+  // Общие статусы
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [profileForm, setProfileForm] = useState({
-    birth_date: "",
-    gender: "",
-  });
-
-  const [activeTab, setActiveTab] = useState("main");
+  // Параметры расклада
+  const [spreadType, setSpreadType] = useState("three"); // "one" | "three" | ...
+  const [category, setCategory] = useState("love");
   const [question, setQuestion] = useState("");
+
+  // Выбранные карты (индексы 0–77)
+  const [selectedCards, setSelectedCards] = useState([]); // массив индексов
 
   // Q&A под раскладом
   const [questions, setQuestions] = useState([]);
@@ -46,12 +63,29 @@ function App() {
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState("");
 
-  // ——— Лог initData только один раз ———
+  // Лог initData один раз
   useEffect(() => {
     console.log("InitData in window.__tma:", window.__tma?.initData);
   }, []);
 
-  // ——— Первичная загрузка ———
+  // Применение темы к document.documentElement
+  useEffect(() => {
+    let applied = theme;
+    if (theme === "system" && typeof window !== "undefined") {
+      const prefersDark = window.matchMedia?.(
+        "(prefers-color-scheme: dark)"
+      ).matches;
+      applied = prefersDark ? "dark" : "light";
+    }
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-theme", applied);
+    }
+    if (typeof window !== "undefined") {
+      localStorage.setItem("tma_theme", theme);
+    }
+  }, [theme]);
+
+  // Первичная загрузка профиля и истории раскладов
   useEffect(() => {
     async function loadInitial() {
       try {
@@ -63,13 +97,6 @@ function App() {
         ]);
 
         setProfile(profileData);
-
-        if (profileData) {
-          setProfileForm({
-            birth_date: profileData.birth_date || "",
-            gender: profileData.gender || "",
-          });
-        }
 
         if (spreadsData && Array.isArray(spreadsData.items)) {
           setSpreads({ items: spreadsData.items });
@@ -84,7 +111,7 @@ function App() {
     loadInitial();
   }, []);
 
-  // ——— Загрузка вопросов для расклада ———
+  // Загрузка вопросов для расклада
   async function loadQuestionsForSpread(spreadId) {
     if (!spreadId) {
       setQuestions([]);
@@ -103,17 +130,34 @@ function App() {
     }
   }
 
-  // ——— Создание авто-расклада ———
-  async function handleCreateAutoSpread() {
+  // Смена типа расклада — сбрасываем выбранные карты
+  function handleSpreadTypeChange(type) {
+    setSpreadType(type);
+    setSelectedCards([]);
+  }
+
+  // Выбор карты (индекс 0–77)
+  function handleSelectCard(index) {
+    setSelectedCards((prev) => {
+      const maxCards = spreadType === "one" ? 1 : 3;
+      if (prev.length >= maxCards) return prev; // не больше лимита
+      if (prev.includes(index)) return prev; // без дублей
+      return [...prev, index];
+    });
+  }
+
+  // Создание расклада (обобщённый handleCreateSpread)
+  async function handleCreateSpread() {
     try {
       setLoading(true);
       setError(null);
 
       const payload = {
-        spread_type: "three",
-        category: "love",
-        mode: "auto",
+        spread_type: spreadType,
+        category,
+        mode: "auto", // пока авто, позже можно разделить на auto/manual
         question: question.trim() || null,
+        // selected_cards: selectedCards, // можно добавить позже, когда бек будет готов
       };
 
       const spread = await createAutoSpread(payload);
@@ -140,10 +184,16 @@ function App() {
         return { ...prev, items: [newItem, ...items] };
       });
 
-      // после выбора/создания расклада подгружаем вопросы
-      loadQuestionsForSpread(spread.id);
+      // подгружаем вопросы
+      await loadQuestionsForSpread(spread.id);
 
+      // сброс вопроса и выбранных карт после успешного создания
       setQuestion("");
+      setSelectedCards([]);
+      setNewQuestion("");
+
+      // переход на экран раскладов
+      setActiveTab("spreads");
     } catch (err) {
       setError(err.message || "Не удалось создать расклад");
     } finally {
@@ -151,38 +201,15 @@ function App() {
     }
   }
 
-  // ——— Профиль: начало редактирования ———
-  function handleProfileEditToggle() {
-    if (profile) {
-      setProfileForm({
-        birth_date: profile.birth_date || "",
-        gender: profile.gender || "",
-      });
-    }
-    setIsEditingProfile(true);
-  }
-
-  // ——— Профиль: изменение формы ———
-  function handleProfileFormChange(event) {
-    const { name, value } = event.target;
-    setProfileForm((prev) => ({ ...prev, [name]: value }));
-  }
-
-  // ——— Профиль: сохранить ———
-  async function handleProfileSave() {
+  // Обновление профиля (бизнес-логика, UI в ProfileScreen)
+  async function handleUpdateProfile(payload) {
     try {
       setLoading(true);
       setError(null);
 
-      const payload = {
-        birth_date: profileForm.birth_date || null,
-        gender: profileForm.gender || null,
-      };
-
       const updatedProfile = await updateProfile(payload);
 
       setProfile(updatedProfile);
-      setIsEditingProfile(false);
 
       setError("Профиль сохранён");
       setTimeout(() => setError(null), 2000);
@@ -193,18 +220,7 @@ function App() {
     }
   }
 
-  // ——— Профиль: отмена редактирования ———
-  function handleProfileCancel() {
-    if (profile) {
-      setProfileForm({
-        birth_date: profile.birth_date || "",
-        gender: profile.gender || "",
-      });
-    }
-    setIsEditingProfile(false);
-  }
-
-  // ——— Ввод нового вопроса (с очисткой ошибки) ———
+  // Ввод нового вопроса (с очисткой ошибки)
   function handleNewQuestionChange(e) {
     setNewQuestion(e.target.value);
     if (questionsError) {
@@ -212,7 +228,7 @@ function App() {
     }
   }
 
-  // ——— Задать новый вопрос к раскладу ———
+  // Задать новый вопрос к раскладу
   async function handleAskQuestion() {
     if (!currentSpread || !newQuestion.trim()) return;
     setQuestionsError("");
@@ -222,7 +238,6 @@ function App() {
         currentSpread.id,
         newQuestion.trim()
       );
-      // optimistic update: добавляем в конец списка, не трогая остальные
       setQuestions((prev) => [...prev, created]);
       setNewQuestion("");
     } catch (e) {
@@ -233,306 +248,93 @@ function App() {
     }
   }
 
-  return (
-    <div className="app-root">
-      <h1>Luna Tarot TMA (dev)</h1>
+  // Выбор расклада из истории
+  function handleHistorySelectSpread(id) {
+    if (!spreads || !Array.isArray(spreads.items)) return;
 
-      {/* ——— Блок ошибок / статусов ——— */}
+    const found = spreads.items.find((s) => s.id === id);
+    if (!found) return;
+
+    setCurrentSpread(found);
+    setActiveTab("spreads");
+  }
+
+  // Рендер активного экрана
+  function renderActiveScreen() {
+    switch (activeTab) {
+      case "home":
+        return (
+          <HomeScreen
+            profile={profile}
+            initialLoading={initialLoading}
+            onGoSpreads={() => setActiveTab("spreads")}
+            onGoHistory={() => setActiveTab("history")}
+            onGoProfile={() => setActiveTab("profile")}
+          />
+        );
+      case "spreads":
+        return (
+          <SpreadsScreen
+            profile={profile}
+            loading={loading}
+            currentSpread={currentSpread}
+            // параметры расклада
+            spreadType={spreadType}
+            onSpreadTypeChange={handleSpreadTypeChange}
+            category={category}
+            onCategoryChange={setCategory}
+            question={question}
+            onQuestionChange={setQuestion}
+            // выбор карт
+            selectedCards={selectedCards}
+            onSelectCard={handleSelectCard}
+            // создание расклада
+            onCreateSpread={handleCreateSpread}
+            // Q&A
+            questions={questions}
+            newQuestion={newQuestion}
+            onNewQuestionChange={handleNewQuestionChange}
+            questionsLoading={questionsLoading}
+            questionsError={questionsError}
+            onAskQuestion={handleAskQuestion}
+            formatDate={formatDate}
+          />
+        );
+      case "history":
+        return (
+          <HistoryScreen
+            spreads={spreads?.items || []}
+            initialLoading={initialLoading}
+            formatDate={formatDate}
+            onSelectSpread={handleHistorySelectSpread}
+          />
+        );
+      case "profile":
+        return (
+          <ProfileScreen
+            profile={profile}
+            loading={loading}
+            onUpdateProfile={handleUpdateProfile}
+            theme={theme}
+            onThemeChange={setTheme}
+          />
+        );
+      default:
+        return null;
+    }
+  }
+
+  return (
+    <div className={`app-root theme-${theme}`}>
+      {/* Глобальные ошибки/статусы */}
       {error && <div className="alert alert-error">{error}</div>}
       {questionsError && (
         <div className="alert alert-error">{questionsError}</div>
       )}
 
-      {/* ——— Таббар ——— */}
-      <div className="tabs">
-        <button
-          className={activeTab === "main" ? "tab active" : "tab"}
-          onClick={() => setActiveTab("main")}
-        >
-          Главная
-        </button>
+      <main className="app-main">{renderActiveScreen()}</main>
 
-        <button
-          className={activeTab === "profile" ? "tab active" : "tab"}
-          onClick={() => setActiveTab("profile")}
-        >
-          Профиль
-        </button>
-      </div>
-
-      {/* ————————————————————————
-          ВКЛАДКА: ГЛАВНАЯ
-      ———————————————————————— */}
-      {activeTab === "main" && (
-        <>
-          {/* Новый расклад */}
-          <div className="block">
-            <h2>Новый расклад</h2>
-
-            <label className="field-label">Вопрос (необязательно)</label>
-            <textarea
-              className="text-input"
-              rows={3}
-              placeholder="О чём вы хотите спросить карты?"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-            />
-
-            <button onClick={handleCreateAutoSpread} disabled={loading}>
-              {loading
-                ? "Создаём расклад..."
-                : "Создать авто-расклад (3 карты, любовь)"}
-            </button>
-          </div>
-
-          {/* Текущий расклад */}
-          <div className="block">
-            <h2>Текущий расклад</h2>
-
-            {!currentSpread && <p>Пока расклад не создан.</p>}
-
-            {currentSpread && (
-              <div className="spread">
-                <p>
-                  <strong>ID:</strong> {currentSpread.id}
-                </p>
-
-                {currentSpread.question && (
-                  <div style={{ marginBottom: 8 }}>
-                    <div className="field-label">Вопрос к раскладу</div>
-                    <div>{currentSpread.question}</div>
-                  </div>
-                )}
-
-                <p>
-                  <strong>Тип:</strong> {currentSpread.spread_type}
-                </p>
-                <p>
-                  <strong>Категория:</strong> {currentSpread.category}
-                </p>
-                <p>
-                  <strong>Создан:</strong>{" "}
-                  {formatDate(currentSpread.created_at)}
-                </p>
-
-                {Array.isArray(currentSpread.cards) && (
-                  <>
-                    <h3>Карты</h3>
-                    <ul>
-                      {currentSpread.cards.map((card) => (
-                        <li key={card.position}>
-                          <strong>{card.position}.</strong> {card.name}
-                          {card.is_reversed ? " — (перевёрнутая)" : ""}
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-
-                <h3>Интерпретация</h3>
-                {currentSpread.interpretation ? (
-                  <p>{currentSpread.interpretation}</p>
-                ) : (
-                  <p>Интерпретация ещё генерируется или не задана.</p>
-                )}
-              </div>
-            )}
-
-            {/* Вопросы к раскладу (Q&A) */}
-            <div className="block" style={{ marginTop: "1rem" }}>
-              <div className="block-title">Вопросы к раскладу</div>
-
-              {!currentSpread ? (
-                <p className="text-muted">
-                  Сначала создайте расклад, чтобы задать уточняющий вопрос.
-                </p>
-              ) : (
-                <>
-                  {questionsLoading && (
-                    <div className="text-muted">Загрузка вопросов...</div>
-                  )}
-
-                  {!questionsLoading && questions.length === 0 && (
-                    <div className="text-muted">
-                      Пока вопросов нет. Вы можете задать первый.
-                    </div>
-                  )}
-
-                  {!questionsLoading && questions.length > 0 && (
-                    <ul className="questions-list">
-                      {questions.map((q) => (
-                        <li key={q.id} className="question-item">
-                          <div className="question-text">❓ {q.question}</div>
-                          {q.answer && (
-                            <div className="answer-text">✨ {q.answer}</div>
-                          )}
-                          <div className="question-date">
-                            {formatDate(q.created_at)}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  {/* Форма задать новый вопрос */}
-                  <div
-                    className="question-form"
-                    style={{ marginTop: "0.75rem" }}
-                  >
-                    <div className="field-label">Новый вопрос к раскладу</div>
-                    <textarea
-                      className="text-input"
-                      rows={3}
-                      placeholder="Что ещё хотите уточнить по этому раскладу?"
-                      value={newQuestion}
-                      onChange={handleNewQuestionChange}
-                    />
-                    <button
-                      type="button"
-                      disabled={
-                        questionsLoading ||
-                        !currentSpread ||
-                        !newQuestion.trim()
-                      }
-                      onClick={handleAskQuestion}
-                    >
-                      {questionsLoading ? "Отправка..." : "Задать вопрос"}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* История раскладов */}
-          <div className="block">
-            <h2>История раскладов</h2>
-
-            {initialLoading && !spreads.items.length && (
-              <p>Загрузка истории...</p>
-            )}
-
-            {!initialLoading && spreads.items.length === 0 && (
-              <p>История раскладов пуста.</p>
-            )}
-
-            {spreads.items.length > 0 && (
-              <ul>
-                {spreads.items.slice(0, 5).map((s) => (
-                  <li key={s.id} style={{ marginBottom: "0.75rem" }}>
-                    <div>
-                      <strong>#{s.id}</strong> • {s.spread_type} • {s.category} •{" "}
-                      {formatDate(s.created_at)} {s.has_questions && "💬"}
-                    </div>
-
-                    {s.short_preview && (
-                      <div style={{ opacity: 0.7, fontSize: "0.9em" }}>
-                        Интерпретация расклада: {s.short_preview}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Dev-информация */}
-          {import.meta.env.VITE_TMA_DEV_MODE === "1" && (
-            <div
-              style={{
-                marginTop: "2rem",
-                fontSize: "0.75rem",
-                opacity: 0.6,
-                borderTop: "1px solid #444",
-                paddingTop: "0.5rem",
-              }}
-            >
-              Dev mode: VITE_TMA_DEV_MODE=1
-              <br />
-              API_BASE_URL: {import.meta.env.VITE_API_BASE_URL}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ————————————————————————
-          ВКЛАДКА: ПРОФИЛЬ
-      ———————————————————————— */}
-      {activeTab === "profile" && (
-        <div className="block">
-          <h2>Профиль</h2>
-
-          {initialLoading && !profile && <p>Загрузка профиля...</p>}
-          {!initialLoading && !profile && <p>Профиль не загружен.</p>}
-
-          {profile && (
-            <>
-              {!isEditingProfile ? (
-                <>
-                  <p>Telegram ID: {profile.user_id}</p>
-                  <p>Username: {profile.username || "—"}</p>
-                  <p>
-                    Имя:{" "}
-                    {[profile.first_name, profile.last_name]
-                      .filter(Boolean)
-                      .join(" ") || "—"}
-                  </p>
-                  <p>Дата рождения: {profile.birth_date || "—"}</p>
-                  <p>
-                    Пол:{" "}
-                    {profile.gender === "female"
-                      ? "женский"
-                      : profile.gender === "male"
-                      ? "мужской"
-                      : "—"}
-                  </p>
-                  <p>Знак зодиака: {profile.zodiac || "—"}</p>
-                  <p>Возраст: {profile.age ?? "—"}</p>
-
-                  <button onClick={handleProfileEditToggle} disabled={loading}>
-                    Редактировать профиль
-                  </button>
-                </>
-              ) : (
-                <>
-                  <label>
-                    Дата рождения:
-                    <input
-                      type="date"
-                      name="birth_date"
-                      value={profileForm.birth_date || ""}
-                      onChange={handleProfileFormChange}
-                    />
-                  </label>
-
-                  <label>
-                    Пол:
-                    <select
-                      name="gender"
-                      value={profileForm.gender || ""}
-                      onChange={handleProfileFormChange}
-                    >
-                      <option value="">Не выбран</option>
-                      <option value="female">Женский</option>
-                      <option value="male">Мужской</option>
-                      <option value="other">Другое</option>
-                    </select>
-                  </label>
-
-                  <div style={{ marginTop: "0.75rem", display: "flex", gap: 8 }}>
-                    <button onClick={handleProfileSave} disabled={loading}>
-                      Сохранить
-                    </button>
-                    <button onClick={handleProfileCancel} disabled={loading}>
-                      Отмена
-                    </button>
-                  </div>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      <BottomNav activeTab={activeTab} onChange={setActiveTab} />
     </div>
   );
 }

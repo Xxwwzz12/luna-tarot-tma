@@ -1,35 +1,171 @@
+/* =========================================================
+   CSS-ПЕРЕМЕННЫЕ ТЕМЫ
+   ========================================================= */
 :root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Темные значения по умолчанию */
+  --bg: #090814;
+  --bg-elevated: #141322;
+  --bg-soft: #1b1a2a;
+  --text-main: #ffffff;
+  --text-muted: rgba(255, 255, 255, 0.6);
+  --accent: #c084fc;
+  --accent-soft: rgba(192, 132, 252, 0.18);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
 }
 
-/* Базовые стили */
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-elevated: #faf5ff;
+  --bg-soft: #fef7ff;
+  --text-main: #1f172a;
+  --text-muted: rgba(15, 23, 42, 0.6);
+  --accent: #d946ef;
+  --accent-soft: rgba(217, 70, 239, 0.08);
+  --border-subtle: rgba(15, 23, 42, 0.08);
+
+  color-scheme: light;
+}
+
+/* =========================================================
+   БАЗОВЫЕ СТИЛИ
+   ========================================================= */
 body {
   margin: 0;
-  padding: 0;
-  background: #0d0d12;
-  color: #f5f5f5;
+  background: radial-gradient(
+      circle at top,
+      rgba(148, 163, 253, 0.18),
+      transparent 55%
+    ),
+    var(--bg);
+  color: var(--text-main);
+}
+
+#root {
   min-height: 100vh;
 }
 
-/* Контейнер приложения */
-#root {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 16px;
+.app-root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Универсальные блоки */
-.block {
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 8px;
-  padding: 12px 16px;
+.app-main {
+  flex: 1;
+  padding: 16px;
+  padding-bottom: 80px;
+}
+
+.page h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+/* =========================================================
+   КАРТОЧКИ
+   ========================================================= */
+.card {
+  background: var(--bg-elevated);
+  border-radius: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
   margin-bottom: 12px;
 }
 
-/* ===== Вкладки ===== */
+/* =========================================================
+   НИЖНЯЯ НАВИГАЦИЯ
+   ========================================================= */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 50;
+}
+
+.nav-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.nav-btn span:first-child {
+  font-size: 1.1rem;
+}
+
+.nav-btn.active {
+  color: var(--accent);
+}
+
+/* =========================================================
+   ПИЛЛЮЛИ И ЧИПЫ
+   ========================================================= */
+.pill-switch {
+  display: inline-flex;
+  padding: 4px;
+  background: var(--bg-soft);
+  border-radius: 999px;
+}
+
+.pill-option {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.pill-option.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.chip {
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.chip.chip-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+
+/* =========================================================
+   ВКЛАДКИ (локальные табы)
+   ========================================================= */
 .tabs {
   display: flex;
   gap: 8px;
@@ -40,41 +176,43 @@ body {
   flex: 1;
   padding: 8px 12px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
   background: transparent;
-  color: #f5f5f5;
-  font-size: 14px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .tab.active {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.3);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-soft);
 }
 
-/* ===== Поля ввода (15.3) ===== */
+/* =========================================================
+   ПОЛЯ ВВОДА
+   ========================================================= */
 .field-label {
   display: block;
   margin-bottom: 4px;
   font-size: 13px;
   opacity: 0.8;
+  color: var(--text-muted);
 }
 
 .text-input {
   width: 100%;
-  box-sizing: border-box;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.04);
-  color: #f5f5f5;
   padding: 8px 10px;
-  font-family: inherit;
+  color: var(--text-main);
   font-size: 14px;
   resize: vertical;
 }
 
-/* ===== ALERT-блоки (2.1) ===== */
+/* =========================================================
+   ALERT-БЛОКИ
+   ========================================================= */
 .alert {
   border-radius: 8px;
   padding: 8px 12px;
@@ -94,7 +232,9 @@ body {
   color: #b3ffcb;
 }
 
-/* ===== Список вопросов (16.5) ===== */
+/* =========================================================
+   ВОПРОСЫ / Q&A
+   ========================================================= */
 .questions-list {
   list-style: none;
   padding: 0;
@@ -103,22 +243,21 @@ body {
 
 .question-item {
   padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .question-item:last-child {
   border-bottom: none;
 }
 
-.question-text {
+.question-text,
+.answer-text {
   font-size: 0.9rem;
   margin-bottom: 4px;
 }
 
 .answer-text {
-  font-size: 0.9rem;
   opacity: 0.9;
-  margin-bottom: 4px;
 }
 
 .question-date {
@@ -126,39 +265,229 @@ body {
   opacity: 0.6;
 }
 
-/* ===== muted-текст (17.2) ===== */
+/* =========================================================
+   ВСПОМОГАТЕЛЬНЫЕ
+   ========================================================= */
 .muted {
   font-size: 0.8rem;
-  opacity: 0.6;
+  opacity: 0.8;
+  color: var(--text-muted);
 }
 
-/* Ссылки */
-a {
-  color: #9bb0ff;
-  text-decoration: none;
+.small {
+  font-size: 0.8rem;
 }
-a:hover {
-  text-decoration: underline;
+
+.center {
+  text-align: center;
 }
 
 /* Кнопки */
 button {
   padding: 8px 14px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--bg-soft);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  color: #f5f5f5;
+  color: var(--text-main);
   cursor: pointer;
-  font-family: inherit;
-  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 button:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
 }
 
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Основная кнопка */
+.btn-primary {
+  width: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  padding: 10px 16px;
+  border: none;
+  font-size: 0.95rem;
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+}
+
+/* =========================================================
+   🔮 ТЗ D — КАРУСЕЛЬ ТАРО
+   ========================================================= */
+.page-spreads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.section-subtitle {
+  font-size: 0.85rem;
+  opacity: 0.9;
+  margin: 10px 0 4px;
+}
+
+.tarot-carousel {
+  margin-bottom: 8px;
+}
+
+.tarot-carousel-shell {
+  text-align: center;
+}
+
+.tarot-stack {
+  position: relative;
+  height: 160px;
+  margin: 12px auto;
+  max-width: 220px;
+}
+
+.tarot-card {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 170px;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.22), transparent 55%),
+    linear-gradient(145deg, #1e1630, #070717);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.65);
+}
+
+:root[data-theme="light"] .tarot-card {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.9), transparent 55%),
+    linear-gradient(145deg, #fdf2ff, #f9e6ff);
+  border-color: rgba(148, 27, 178, 0.18);
+  box-shadow: 0 12px 24px rgba(148, 27, 178, 0.18);
+}
+
+.tarot-card.main {
+  z-index: 3;
+}
+
+.tarot-card.ghost-left {
+  z-index: 2;
+  transform: translateX(-70%) rotate(-6deg);
+  opacity: 0.7;
+}
+
+.tarot-card.ghost-right {
+  z-index: 1;
+  transform: translateX(-30%) rotate(6deg);
+  opacity: 0.5;
+}
+
+.carousel-controls {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.carousel-controls button {
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  padding: 6px 10px;
+  background: var(--bg-soft);
+  color: var(--text-main);
+  font-size: 0.9rem;
+}
+
+.carousel-controls .btn-primary {
+  flex: 1;
+}
+
+/* =========================================================
+   ТЕКУЩИЙ РАСКЛАД
+   ========================================================= */
+.spread-current .spread-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.spread-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.spread-cards {
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+
+.spread-interpretation {
+  margin-top: 10px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.spread-current-empty {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+/* =========================================================
+   D — ДОПОЛНИТЕЛЬНЫЕ СТИЛИ ДЛЯ ТЕКУЩЕГО РАСКЛАДА И ИСТОРИИ
+   ========================================================= */
+
+/* Шапка секции текущего расклада */
+.spread-current-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+/* Мягкий бейдж — “из истории” и др. */
+.badge-soft {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
+
+:root[data-theme="light"] .badge-soft {
+  background: rgba(148, 27, 178, 0.06);
+  color: #7b3fa8;
+}
+
+/* Кликабельные элементы истории */
+.history-item-clickable {
+  cursor: pointer;
+  transition:
+    transform 120ms ease-out,
+    box-shadow 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.history-item-clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+:root[data-theme="light"] .history-item-clickable:hover {
+  box-shadow: 0 8px 18px rgba(148, 27, 178, 0.18);
+  border-color: rgba(148, 27, 178, 0.25);
 }
