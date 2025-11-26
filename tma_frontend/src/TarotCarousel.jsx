@@ -105,6 +105,12 @@ export default function TarotCarousel({
 
       <div className="tarot-carousel-shell">
         <div className="tarot-stack">
+          {/* Левая «призрачная» карта */}
+          <div className="tarot-card ghost ghost-left">
+            <span className="tarot-card-back">🜁</span>
+          </div>
+
+          {/* Основная карта — на ней жесты */}
           <div
             className={`tarot-card main ${isDragging ? "dragging" : ""}`}
             style={cardStyle}
@@ -118,6 +124,11 @@ export default function TarotCarousel({
           >
             <span className="tarot-card-back">🜁</span>
           </div>
+
+          {/* Правая «призрачная» карта */}
+          <div className="tarot-card ghost ghost-right">
+            <span className="tarot-card-back">🜁</span>
+          </div>
         </div>
 
         <div className="carousel-controls">
@@ -128,7 +139,9 @@ export default function TarotCarousel({
           >
             ◀
           </button>
-
+          <span className="muted small">
+            Карта #{index + 1} из {TOTAL_CARDS}
+          </span>
           <button
             type="button"
             className="btn-ghost"
@@ -137,10 +150,6 @@ export default function TarotCarousel({
             ▶
           </button>
         </div>
-
-        <p className="muted small center">
-          Карта #{index + 1} из {TOTAL_CARDS}
-        </p>
 
         <button
           type="button"
