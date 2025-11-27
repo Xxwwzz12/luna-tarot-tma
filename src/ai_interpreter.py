@@ -10,10 +10,9 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# ✅ Безопасный импорт конфига: сначала пытаемся взять общий src.config,
-# если он недоступен (например, в TMA на Render) — уходим в ENV-конфиг.
+# ✅ Безопасный конфиг: сначала пробуем импортировать src.config,
+# если недоступен (как в TMA на Render) — используем ENV-конфиг.
 try:
-    # основной путь — когда весь монорепозиторий доступен
     from src.config import OPENROUTER_CONFIG, get_available_models  # type: ignore
 except ImportError as e:
     logger.warning(
@@ -30,7 +29,7 @@ except ImportError as e:
             self.max_tokens = int(os.getenv("OPENROUTER_MAX_TOKENS", "1000"))
             self.temperature = float(os.getenv("OPENROUTER_TEMPERATURE", "0.7"))
             self.timeout = int(os.getenv("OPENROUTER_TIMEOUT", "30"))
-            # опционально — можно добавить max_retries, если нужно:
+            # опционально — max_retries из ENV
             self.max_retries = int(os.getenv("OPENROUTER_MAX_RETRIES", "2"))
 
     OPENROUTER_CONFIG = _EnvOpenRouterConfig()
@@ -41,7 +40,7 @@ except ImportError as e:
         if models:
             return models
 
-        # жёсткий fallback на бесплатные модели, чтобы вообще что-то работало
+        # жёсткий fallback на бесплатные модели
         return [
             "meta-llama/llama-3.3-70b-instruct:free",
             "google/gemma-2-9b-it:free",
@@ -56,14 +55,14 @@ from .ai_prompts import (
 )
 
 # ✅ НАСТРОЙКА ЛОГГЕРА: предотвращаем дублирование
-logger.propagate = False  # ✅ ЗАПРЕТ ДУБЛИРОВАНИЯ ЛОГОВ
+logger.propagate = False
 
 
 class AIInterpreter:
     def __init__(self):
         self.api_key = OPENROUTER_CONFIG.api_key
 
-        # ✅ ИСТОЧНИК МОДЕЛЕЙ: берём общий список из конфигурации
+        # ✅ Единый список моделей из конфига
         models: list[str] = []
         try:
             models = get_available_models()
@@ -76,27 +75,25 @@ class AIInterpreter:
             logger.error("🚨 CRITICAL: model_list is empty! Using fallback meta-llama")
             self.model_list = ["meta-llama/llama-3.3-70b-instruct"]
 
-        # ✅ ЛОГИРОВАНИЕ ВЫСОКОГО УРОВНЯ: только порядок моделей
         model_names = [m.split("/")[-1] for m in self.model_list]
         logger.info(f"🔧 AIInterpreter model_list order: {model_names}")
 
         self.base_url = OPENROUTER_CONFIG.base_url
         self.max_tokens = OPENROUTER_CONFIG.max_tokens
-        # базовая температура (при необходимости можно взять из OPENROUTER_CONFIG.temperature)
-        self.temperature = 1.0
+        self.temperature = 1.0  # при желании можно взять из OPENROUTER_CONFIG.temperature
 
-        # ✅ PER-MODEL ТАЙМАУТЫ
+        # ✅ PER-MODEL таймауты
         self.request_timeout = getattr(OPENROUTER_CONFIG, "timeout", 60)
         self.per_model_timeout = {
             "meta-llama/llama-3.3-70b-instruct": 90,
             "microsoft/wizardlm-2-8x22b:free": 90,
         }
 
-        # ✅ УСОВЕРШЕНСТВОВАННАЯ КОНФИГУРАЦИЯ RETRY/BACKOFF
+        # ✅ Retry/Backoff
         self.max_retries = getattr(OPENROUTER_CONFIG, "max_retries", 2)
         self.base_backoff = 1.5
         self.backoff_multiplier = 1.5
-        self.max_backoff = 3.0  # ✅ МАКСИМАЛЬНАЯ ЗАДЕРЖКА 3 СЕКУНДЫ
+        self.max_backoff = 3.0
 
         logger.info(
             f"⏱️ Request timeout: base={self.request_timeout}s, meta-llama=90s"
@@ -105,17 +102,16 @@ class AIInterpreter:
             f"🔄 Retry config: {self.max_retries} attempts, backoff: {self.base_backoff}→{self.max_backoff}s"
         )
 
-        # Circuit breaker state
+        # Circuit breaker
         self._model_failures: Dict[str, int] = {}
         self._model_cooldown_until: Dict[str, float] = {}
-        self._model_cooldown_duration = 300  # сек
+        self._model_cooldown_duration = 300
 
-        # Session cache for successful models
+        # Кэш предпочтительных моделей по пользователю
         self._preferred_models: Dict[int, Tuple[str, float]] = {}
-        self._preferred_model_ttl = 1800  # сек
+        self._preferred_model_ttl = 1800
 
         self._validate_parameters()
-        # оставляем кэш промптов на будущее / совместимость
         self.prompt_cache: Dict[str, str] = {}
         self.cache_size = 50
 
@@ -124,7 +120,6 @@ class AIInterpreter:
         )
 
     def _validate_parameters(self):
-        """Валидация параметров"""
         if not (0 <= self.temperature <= 2):
             logger.warning(
                 f"⚠️ Invalid temperature {self.temperature}, clamping to 1.0"
@@ -136,11 +131,9 @@ class AIInterpreter:
             self.max_tokens = 4000
 
     def _get_request_timeout(self, model: str) -> int:
-        """✅ ПОЛУЧЕНИЕ ТАЙМАУТА ДЛЯ КОНКРЕТНОЙ МОДЕЛИ"""
         return self.per_model_timeout.get(model, self.request_timeout)
 
     def _calculate_backoff(self, attempt: int) -> float:
-        """✅ РАСЧЕТ BACKOFF С ОГРАНИЧЕНИЕМ МАКСИМУМА"""
         backoff = self.base_backoff * (self.backoff_multiplier ** attempt)
         return min(backoff, self.max_backoff)
 
@@ -159,16 +152,13 @@ class AIInterpreter:
     ) -> Dict[str, Any]:
         """
         Генерация интерпретации расклада
-
-        Returns:
-            Dict с результатом: {success, text, model, error}
+        Returns: {success, text, model, error}
         """
         try:
             logger.info(
                 f"🎯 Generating interpretation for {len(cards)} cards, category: {category}"
             )
 
-            # ✅ DEBUG: логируем порядок моделей только при необходимости
             if logger.isEnabledFor(logging.DEBUG):
                 model_names = [m.split("/")[-1] for m in self.model_list]
                 logger.debug(f"🔧 Current model_list order: {model_names}")
@@ -183,23 +173,21 @@ class AIInterpreter:
                 "cards": cards,
             }
 
-            # Используем общий билдер промптов
+            # Промпт через общий билдер, уже с учётом вопроса
             prompt = build_spread_interpretation_prompt(
                 spread_type=spread_type,
                 cards=cards,
-                question_category=category,
+                category=category,
+                question=question,
                 profile_context=profile_context,
-                question=question,   # ✅ добавлено
-             )
-
+            )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"📝 Prompt length: {len(prompt)} characters")
 
-            # ✅ ЕСЛИ ПЕРЕДАНА КОНКРЕТНАЯ МОДЕЛЬ - ИСПОЛЬЗУЕМ ТОЛЬКО ЕЁ
+            # ✅ Если явно указана модель — используем только её
             if model:
                 logger.info(f"🎯 Using specific model: {model}")
 
-                # Проверяем, не в cooldown ли модель
                 if self._is_model_in_cooldown(model):
                     logger.warning(f"⏸️ Model {model} is in cooldown")
                     return {
@@ -212,7 +200,8 @@ class AIInterpreter:
                 result = await self._make_llm_request(
                     model=model,
                     spread_data=spread_data,
-                    question_category=category,
+                    category=category,
+                    question=question,
                     profile_context=profile_context,
                 )
 
@@ -236,7 +225,7 @@ class AIInterpreter:
                     self._record_model_failure(model)
                     return result
 
-            # ✅ СТАНДАРТНАЯ ЛОГИКА С КЭШЕМ И CIRCUIT BREAKER
+            # ✅ Стандартная логика с fallback
             return await self._generate_with_fallback(
                 spread_data=spread_data,
                 category=category,
@@ -260,11 +249,11 @@ class AIInterpreter:
         profile_context: str,
         user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Стандартная логика с кэшем и circuit breaker"""
+        """Перебор моделей с кэшем и circuit breaker"""
         preferred_model = self._get_preferred_model(user_id)
         models_to_try = self.model_list.copy()
 
-        # ✅ ЗАПРЕТ НА ПЕРЕМЕЩЕНИЕ DEEPSEEK В НАЧАЛО
+        # Не поднимаем deepseek в начало
         if (
             preferred_model
             and preferred_model in models_to_try
@@ -275,7 +264,6 @@ class AIInterpreter:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"🎯 Starting with preferred model: {preferred_model}")
 
-        # Перебор моделей с circuit breaker
         for i, model in enumerate(models_to_try, 1):
             if self._is_model_in_cooldown(model):
                 if logger.isEnabledFor(logging.DEBUG):
@@ -288,14 +276,14 @@ class AIInterpreter:
             result = await self._make_llm_request(
                 model=model,
                 spread_data=spread_data,
-                question_category=category,
+                category=category,
+                question=None,
                 profile_context=profile_context,
             )
 
             if result["success"] and self._is_valid_interpretation(result["text"]):
                 logger.info(f"✅ SUCCESS with model {model}")
 
-                # ✅ ЗАПРЕТ НА КЭШИРОВАНИЕ DEEPSEEK
                 if model != "deepseek/deepseek-r1:free":
                     self._set_preferred_model(user_id, model)
 
@@ -317,7 +305,6 @@ class AIInterpreter:
                 self._record_model_failure(model)
                 continue
 
-        # Все модели не сработали
         logger.error("❌ All AI models failed to generate interpretation")
         fallback_text = self._generate_basic_interpretation(spread_data, category)
 
@@ -333,18 +320,20 @@ class AIInterpreter:
         model: str,
         prompt: Optional[str] = None,
         spread_data: Optional[Dict] = None,
-        question_category: Optional[str] = None,
+        category: Optional[str] = None,
+        question: Optional[str] = None,
         profile_context: str = "",
     ) -> Dict[str, Any]:
-        """✅ УСОВЕРШЕНСТВОВАННЫЙ МЕТОД ЗАПРОСА"""
+        """Низкоуровневый вызов OpenRouter"""
 
         if prompt is None:
-            if spread_data is None or question_category is None:
+            if not spread_data:
+                logger.error("No spread_data provided for LLM request")
                 return {
                     "success": False,
                     "text": None,
                     "model": model,
-                    "error": "Missing required parameters for prompt generation",
+                    "error": "no_spread_data",
                 }
 
             spread_type = spread_data.get("spread_type", "unknown")
@@ -353,11 +342,11 @@ class AIInterpreter:
             prompt = build_spread_interpretation_prompt(
                 spread_type=spread_type,
                 cards=cards,
-                question_category=question_category,
+                category=category,
+                question=question,
                 profile_context=profile_context,
             )
 
-        # ✅ System prompt теперь берём из общего модуля
         system_prompt = BASE_TAROT_SYSTEM_PROMPT
 
         payload = {
@@ -386,7 +375,6 @@ class AIInterpreter:
             "X-Title": "Tarot Bot Luna",
         }
 
-        # ✅ УСОВЕРШЕНСТВОВАННЫЙ BACKOFF С ОГРАНИЧЕНИЕМ
         for attempt in range(self.max_retries):
             start_time = time.time()
             try:
@@ -409,7 +397,6 @@ class AIInterpreter:
                         elapsed = end_time - start_time
                         response_headers = dict(response.headers)
 
-                        # ✅ DEBUG: логируем метаданные ответа
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
                                 f"📨 Response (model={model}) status={response.status} time={elapsed:.1f}s"
@@ -419,7 +406,6 @@ class AIInterpreter:
                         if response.status == 200:
                             raw_body = await response.text()
 
-                            # ✅ DEBUG: логируем сырое тело ответа
                             if logger.isEnabledFor(logging.DEBUG):
                                 logger.debug(
                                     f"📄 Raw response body (model={model}): {raw_body[:2000]!r}"
@@ -431,7 +417,6 @@ class AIInterpreter:
                                     result["choices"][0]["message"]["content"].strip()
                                 )
 
-                                # ✅ INFO: только высокоуровневая информация
                                 logger.info(
                                     f"✅ SUCCESS: {model} responded in {elapsed:.1f}s, len={len(interpretation)}"
                                 )
@@ -552,7 +537,6 @@ class AIInterpreter:
         }
 
     def _validate_payload(self, payload: Dict) -> Dict:
-        """Защитная валидация payload перед запросом"""
         validated_payload = payload.copy()
 
         temp = validated_payload.get("temperature", self.temperature)
@@ -568,7 +552,6 @@ class AIInterpreter:
         return validated_payload
 
     def _is_model_in_cooldown(self, model: str) -> bool:
-        """Circuit breaker: Проверка cooldown для модели"""
         if model not in self._model_cooldown_until:
             return False
 
@@ -586,7 +569,6 @@ class AIInterpreter:
         return False
 
     def _record_model_failure(self, model: str):
-        """Circuit breaker: Запись неудачи"""
         current_failures = self._model_failures.get(model, 0) + 1
         self._model_failures[model] = current_failures
 
@@ -601,14 +583,12 @@ class AIInterpreter:
             )
 
     def _record_model_success(self, model: str):
-        """Circuit breaker: Сброс счетчика неудач"""
         if model in self._model_failures:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"🔄 Resetting failure count for model {model}")
             del self._model_failures[model]
 
     def _get_preferred_model(self, user_id: Optional[int] = None) -> Optional[str]:
-        """Кэш успешных моделей: Получение предпочтительной модели"""
         if not user_id:
             return None
 
@@ -626,7 +606,6 @@ class AIInterpreter:
         return None
 
     def _set_preferred_model(self, user_id: Optional[int], model: str):
-        """Кэш успешных моделей: Сохранение предпочтительной модели"""
         if user_id:
             expiry_ts = time.time() + self._preferred_model_ttl
             self._preferred_models[user_id] = (model, expiry_ts)
@@ -636,7 +615,6 @@ class AIInterpreter:
                 )
 
     def _contains_english_text(self, text: str) -> bool:
-        """Валидация языка: Проверка на наличие английского текста"""
         if not text:
             return False
 
@@ -652,7 +630,6 @@ class AIInterpreter:
         return False
 
     def _is_valid_interpretation(self, interpretation: str) -> bool:
-        """Усиленная валидация ответа с проверкой языка"""
         if not interpretation or len(interpretation.strip()) < 50:
             logger.warning("❌ Invalid interpretation: too short")
             return False
@@ -697,23 +674,17 @@ class AIInterpreter:
         return True
 
     def _clean_ai_response(self, text: str) -> str:
-        """Очистка AI-ответа от англицизмов и служебных тегов вроде <think>"""
         if not text:
             return text
 
-        # ✅ Удаляем внутренний монолог reasoning-моделей (<think>...</think>)
+        # Чистим <think>...</think>
         if "<think>" in text:
             if "</think>" in text:
-                # Берем только то, что идёт ПОСЛЕ закрывающего тега </think>
                 text = text.split("</think>", 1)[1]
             else:
-                # На всякий случай вырезаем всё, что начиная с <think>
                 text = re.sub(r"<think>.*", "", text, flags=re.DOTALL)
 
-        # Чистим остаточные теги, если вдруг остались
         text = re.sub(r"</?think>", "", text, flags=re.IGNORECASE)
-
-        # Обрезаем лишние пустые строки/пробелы
         text = text.strip()
 
         corrections = {
@@ -739,7 +710,6 @@ class AIInterpreter:
         return text
 
     def _clean_response(self, response: str) -> str:
-        """Очистка и форматирование ответа"""
         if not response:
             return response
 
@@ -765,7 +735,6 @@ class AIInterpreter:
     def _generate_basic_interpretation(
         self, spread_data: dict, question_category: str
     ) -> str:
-        """Локальный fallback"""
         cards = spread_data["cards"]
         spread_type = spread_data["spread_type"]
 
@@ -821,7 +790,6 @@ class AIInterpreter:
         user_gender: str = None,
         user_name: str = None,
     ) -> Dict[str, Any]:
-        """Генерация ответа на вопрос по раскладу"""
         logger.info(f"🎯 Generating answer for question: {question}")
 
         try:
@@ -872,7 +840,9 @@ class AIInterpreter:
                         f"🔄 Trying model {i}/{len(models_to_try)} for question: {model}"
                     )
 
-                result = await self._make_llm_request(model, prompt=prompt)
+                result = await self._make_llm_request(
+                    model=model, prompt=prompt, profile_context=profile_context
+                )
 
                 if result["success"] and self._is_valid_interpretation(result["text"]):
                     logger.info(f"✅ SUCCESS with model {model} for question")
@@ -916,7 +886,6 @@ class AIInterpreter:
             }
 
     def _format_cards_text(self, spread_data: Dict) -> str:
-        """Форматирование текста карт для промпта"""
         cards = spread_data.get("cards", [])
         if isinstance(cards, str):
             try:
@@ -951,12 +920,10 @@ class AIInterpreter:
         return cards_text
 
     def _get_spread_data(self, spread_id: int, user_id: int):
-        """Получение данных расклада из базы данных"""
         try:
             from src.user_database import UserDatabase
 
             user_db = UserDatabase()
-
             history = user_db.get_user_history_by_spread_id(user_id, spread_id)
 
             if history:

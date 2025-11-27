@@ -148,7 +148,7 @@ async def _generate_ai_interpretation(
         return None
 
     try:
-        # ⭐ ТЗ: добавить await
+        # Важно: асинхронный вызов интерпретатора
         result = await interpreter.generate_interpretation(
             spread_type=spread_type,
             category=category,
@@ -177,7 +177,7 @@ async def _generate_ai_answer(
         return None
 
     try:
-        # ⭐ ТЗ: добавить await
+        # Важно: асинхронный вызов интерпретатора
         result = await interpreter.generate_question_answer(
             spread_id=spread["id"],
             user_id=spread["user_id"],
@@ -212,6 +212,7 @@ class SpreadService:
     def __init__(self):
         pass
 
+    # 1) AUTO-расклад с AI-интерпретацией
     async def create_auto_spread(
         self,
         user_id: int,
@@ -269,6 +270,7 @@ class SpreadService:
             question=question,
         )
 
+    # 2) Вопросы к раскладу (AI-ответы)
     async def add_spread_question(
         self,
         user_id: int,
@@ -304,7 +306,7 @@ class SpreadService:
             "user_id": user_id,
             "question": question,
             "answer": answer,
-            "status": "ready",
+            "status": "ready",  # TODO: pipeline ('pending' → AI → 'ready' / 'failed')
             "created_at": _now_iso(),
         }
 
@@ -327,3 +329,60 @@ class SpreadService:
         return SpreadQuestionsList(
             items=[SpreadQuestionModel(**q) for q in raw]
         )
+
+    # 3) Список раскладов (основной метод)
+    def get_spreads(
+        self,
+        user_id: int,
+        page: int = 1,
+        limit: int = 10,
+    ) -> Dict[str, Any]:
+        """
+        Основной метод для получения списка раскладов с пагинацией.
+        """
+        spreads = [s for s in _SPREADS.values() if s["user_id"] == user_id]
+        spreads.sort(key=lambda s: s["created_at"], reverse=True)
+
+        total_items = len(spreads)
+        if limit <= 0:
+            limit = 10
+
+        total_pages = max((total_items + limit - 1) // limit, 1)
+        page = max(page, 1)
+        offset = (page - 1) * limit
+
+        items_raw = spreads[offset : offset + limit]
+
+        items: List[SpreadListItem] = []
+        for s in items_raw:
+            preview = (s.get("interpretation") or "")[:140]
+            items.append(
+                SpreadListItem(
+                    id=s["id"],
+                    spread_type=s["spread_type"],
+                    category=s["category"],
+                    created_at=s["created_at"],
+                    short_preview=preview,
+                    has_questions=_spread_has_questions(s),
+                )
+            )
+
+        return {
+            "items": items,
+            "page": page,
+            "total_pages": total_pages,
+            "total_items": total_items,
+        }
+
+    # 4) Алиас для совместимости с роутером TMA
+    def get_spreads_list(
+        self,
+        user_id: int,
+        page: int = 1,
+        limit: int = 10,
+    ) -> Dict[str, Any]:
+        """
+        Алиас для совместимости с роутером TMA.
+        Старое имя метода, теперь просто прокидывает в get_spreads.
+        """
+        return self.get_spreads(user_id=user_id, page=page, limit=limit)
