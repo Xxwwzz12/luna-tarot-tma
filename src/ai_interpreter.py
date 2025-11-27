@@ -6,7 +6,46 @@ import re
 import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
-from .config import OPENROUTER_CONFIG, get_available_models
+import os
+
+logger = logging.getLogger(__name__)
+
+try:
+    # основной путь — когда весь монорепозиторий доступен
+    from src.config import OPENROUTER_CONFIG, get_available_models  # type: ignore
+except ImportError as e:
+    logger.warning(
+        "ai_interpreter: cannot import src.config, falling back to ENV-only config: %s",
+        e,
+    )
+
+    class _EnvOpenRouterConfig:
+        def __init__(self) -> None:
+            self.api_key = os.getenv("OPENROUTER_API_KEY", "")
+            self.base_url = os.getenv(
+                "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+            )
+            self.max_tokens = int(os.getenv("OPENROUTER_MAX_TOKENS", "1000"))
+            self.temperature = float(os.getenv("OPENROUTER_TEMPERATURE", "0.7"))
+            self.timeout = int(os.getenv("OPENROUTER_TIMEOUT", "30"))
+            # опционально — можно добавить max_retries, если нужно:
+            self.max_retries = int(os.getenv("OPENROUTER_MAX_RETRIES", "2"))
+
+    OPENROUTER_CONFIG = _EnvOpenRouterConfig()
+
+    def get_available_models() -> list[str]:
+        raw = os.getenv("OPENROUTER_MODELS", "")
+        models = [m.strip() for m in raw.split(",") if m.strip()]
+        if models:
+            return models
+
+        # жёсткий fallback на бесплатные модели, чтобы вообще что-то работало
+        return [
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "google/gemma-2-9b-it:free",
+            "qwen/qwen-2-7b-instruct:free",
+        ]
+
 from .ai_prompts import (
     BASE_TAROT_SYSTEM_PROMPT,
     build_profile_context,
@@ -15,9 +54,7 @@ from .ai_prompts import (
 )
 
 # ✅ НАСТРОЙКА ЛОГГЕРА: предотвращаем дублирование
-logger = logging.getLogger(__name__)
 logger.propagate = False  # ✅ ЗАПРЕТ ДУБЛИРОВАНИЯ ЛОГОВ
-
 
 class AIInterpreter:
     def __init__(self):
