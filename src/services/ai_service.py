@@ -9,6 +9,12 @@ from datetime import datetime
 import traceback
 from typing import Dict, List, Optional, Tuple, Any, Union
 
+# ✅ Модели теперь тянем из конфига
+try:
+    from src.config import get_available_models
+except ImportError:
+    get_available_models = None
+
 # Настройка логгера для предотвращения дублирования
 logger = logging.getLogger(__name__)
 logger.propagate = False
@@ -60,24 +66,43 @@ class AIService:
         self.max_consecutive_failures = 3
         self.circuit_breaker_timeout = 300
 
-        # Настройка списков моделей: primary -> пытаемся в первую очередь, fallback -> запас
-        base_models = getattr(self.ai_interpreter, 'model_list', None)
-        if base_models and isinstance(base_models, (list, tuple)) and len(base_models) > 1:
-            # Простейшая стратегия: первые 3 — primary, остальные — fallback
-            self.primary_models = list(base_models[:3])
-            self.fallback_models = list(base_models[3:])
+        # ----------------- Настройка списков моделей через конфиг -----------------
+        models: List[str] = []
+
+        # 1) Пытаемся взять список из конфига (основной источник правды)
+        if get_available_models is not None:
+            try:
+                config_models = get_available_models() or []
+                if isinstance(config_models, (list, tuple)):
+                    models.extend(config_models)
+                else:
+                    logger.warning("⚠️ get_available_models() вернул не список/кортеж, игнорирую")
+            except Exception as e:
+                logger.error(f"❌ Ошибка при вызове get_available_models(): {e}")
         else:
-            # Дефолтный порядок (можно переопределить извне)
-            self.primary_models = [
-                'anthropic/claude-3-sonnet',
-                'meta-llama/llama-3-70b-instruct',
-                'anthropic/claude-3-haiku'
-            ]
-            self.fallback_models = [
-                'openai/gpt-3.5-turbo',
-                'google/gemini-pro',
-                'microsoft/wizardlm-2'
-            ]
+            logger.warning("⚠️ get_available_models не импортирован, используем только model_list интерпретатора (если есть)")
+
+        # 2) Если интерпретатор предоставляет свой model_list — аккуратно объединяем
+        interpreter_models = getattr(self.ai_interpreter, "model_list", None)
+        if interpreter_models and isinstance(interpreter_models, (list, tuple)):
+            for m in interpreter_models:
+                if m not in models:
+                    models.append(m)
+
+        # 3) Если в итоге моделей нет вообще — явно логируем ситуацию
+        if not models:
+            logger.error(
+                "💥 Не удалось определить список моделей: "
+                "get_available_models() не дал результатов и ai_interpreter.model_list пуст. "
+                "AI-интерпретация будет сразу уходить в fallback."
+            )
+
+        # 4) Разбиваем на primary / fallback
+        self.primary_models = list(models[:3])
+        self.fallback_models = list(models[3:])
+
+        logger.info(f"⚙️ AIService primary_models: {self.primary_models}")
+        logger.info(f"🛟 AIService fallback_models: {self.fallback_models}")
 
         # Лог OpenRouter
         self.openrouter_key = os.getenv('OPENROUTER_KEY')
@@ -436,8 +461,8 @@ class AIService:
         # Получаем доступные модели с учетом circuit-breaker
         available_models = self._get_available_models()
         if not available_models:
-            logger.error("❌ Все модели временно заблокированы circuit-breaker/backoff")
-            fallback_result = self._handle_complete_failure(spread_type, spread_cards, category, user_name, "all_models_circuit_broken")
+            logger.error("❌ Все модели временно заблокированы circuit-breaker/backoff или не сконфигурированы")
+            fallback_result = self._handle_complete_failure(spread_type, spread_cards, category, user_name, "all_models_circuit_broken_or_missing")
             # Отправляем fallback пользователю
             if bot and chat_id:
                 await self.send_sanitized_message(bot, chat_id, fallback_result)
@@ -695,7 +720,7 @@ class AIService:
 
             available_models = self._get_available_models()
             if not available_models:
-                logger.error("❌ Все модели временно заблокированы circuit-breaker/backoff")
+                logger.error("❌ Все модели временно заблокированы circuit-breaker/backoff или не сконфигурированы")
                 fallback_answer = self._generate_fallback_answer(question, user_name)
                 if bot and chat_id:
                     await self.send_sanitized_message(bot, chat_id, fallback_answer)
@@ -813,7 +838,7 @@ class AIService:
                     if len(extracted_text.strip()) >= FALLBACK_ACCEPT_MIN:
                         score = self._calculate_candidate_score(extracted_text, validation_reason)
                         candidates.append((extracted_text, model, len(extracted_text.strip()), validation_reason, score))
-                        logger.debug(f"🟡 Модель {model} добавлена в кандидаты: {validation_reason}, длина={len(extracted_text.strip())}, score={score:.2f}")
+                        logger.debug(f"🟡 Модель {model} добавлена в кандидаты: {validation_reason}, длина={len(extracted_text.strip()}, score={score:.2f}")
 
                     failure_reasons[model] = f"validation_failed: {validation_reason}"
                     self._record_failure(model, "validation_failed")

@@ -77,9 +77,9 @@ def get_spread(
     return APIResponse(ok=True, data=spread)
 
 
-# 3. POST /spreads — авто и интерактив
+# 3. POST /spreads — авто и интерактив (ASYNC для AI)
 @router.post("", response_model=APIResponse)
-def create_spread(
+async def create_spread(
     body: models.SpreadCreateIn,
     response: Response,
     user: dict = Depends(get_current_user),
@@ -88,7 +88,8 @@ def create_spread(
 
     try:
         if body.mode == "auto":
-            result = service.create_auto_spread(
+            # Предполагаем, что сервисный слой теперь async и сам вызывает AI
+            result = await service.create_auto_spread(
                 user_id=user_id,
                 spread_type=body.spread_type,
                 category=body.category,
@@ -97,7 +98,8 @@ def create_spread(
             return APIResponse(ok=True, data=result, error=None)
 
         elif body.mode == "interactive":
-            result = service.create_interactive_session(
+            # Аналогично для интерактива — AI может вызываться внутри сервиса
+            result = await service.create_interactive_session(
                 user_id=user_id,
                 spread_type=body.spread_type,
                 category=body.category,
@@ -180,21 +182,23 @@ def get_spread_questions(
         )
 
 
-# 6. POST /spreads/{spread_id}/questions
+# 6. POST /spreads/{spread_id}/questions — ASYNC для AI-ответа
 @router.post("/{spread_id}/questions", response_model=APIResponse)
-def add_spread_question(
+async def add_spread_question(
     spread_id: int,
-    body: models.SpreadQuestionCreate,
+    body: SpreadQuestionCreate,
     response: Response,
     user: dict = Depends(get_current_user),
 ):
     try:
-        item = service.add_spread_question(
+        # Предполагаем, что add_spread_question теперь async и внутри вызывает AIInterpreter
+        item = await service.add_spread_question(
             user_id=user["id"],
             spread_id=spread_id,
             question=body.question,
         )
         return APIResponse(ok=True, data=item, error=None)
+
     except ValueError as e:
         response.status_code = status.HTTP_404_NOT_FOUND
         return APIResponse(
