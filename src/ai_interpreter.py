@@ -10,6 +10,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# ✅ Безопасный импорт конфига: сначала пытаемся взять общий src.config,
+# если он недоступен (например, в TMA на Render) — уходим в ENV-конфиг.
 try:
     # основной путь — когда весь монорепозиторий доступен
     from src.config import OPENROUTER_CONFIG, get_available_models  # type: ignore
@@ -56,12 +58,13 @@ from .ai_prompts import (
 # ✅ НАСТРОЙКА ЛОГГЕРА: предотвращаем дублирование
 logger.propagate = False  # ✅ ЗАПРЕТ ДУБЛИРОВАНИЯ ЛОГОВ
 
+
 class AIInterpreter:
     def __init__(self):
         self.api_key = OPENROUTER_CONFIG.api_key
 
         # ✅ ИСТОЧНИК МОДЕЛЕЙ: берём общий список из конфигурации
-        models = []
+        models: list[str] = []
         try:
             models = get_available_models()
         except Exception as e:
@@ -74,24 +77,23 @@ class AIInterpreter:
             self.model_list = ["meta-llama/llama-3.3-70b-instruct"]
 
         # ✅ ЛОГИРОВАНИЕ ВЫСОКОГО УРОВНЯ: только порядок моделей
-        model_names = [m.split('/')[-1] for m in self.model_list]
+        model_names = [m.split("/")[-1] for m in self.model_list]
         logger.info(f"🔧 AIInterpreter model_list order: {model_names}")
 
         self.base_url = OPENROUTER_CONFIG.base_url
         self.max_tokens = OPENROUTER_CONFIG.max_tokens
+        # базовая температура (при необходимости можно взять из OPENROUTER_CONFIG.temperature)
         self.temperature = 1.0
 
         # ✅ PER-MODEL ТАЙМАУТЫ
-        self.request_timeout = getattr(
-            OPENROUTER_CONFIG, "timeout", 60
-        )  # Базовый таймаут 60 секунд
+        self.request_timeout = getattr(OPENROUTER_CONFIG, "timeout", 60)
         self.per_model_timeout = {
-            "meta-llama/llama-3.3-70b-instruct": 90,  # 90 секунд для тяжелой модели
-            "microsoft/wizardlm-2-8x22b:free": 90,  # 90 секунд для большой модели
+            "meta-llama/llama-3.3-70b-instruct": 90,
+            "microsoft/wizardlm-2-8x22b:free": 90,
         }
 
         # ✅ УСОВЕРШЕНСТВОВАННАЯ КОНФИГУРАЦИЯ RETRY/BACKOFF
-        self.max_retries = 2
+        self.max_retries = getattr(OPENROUTER_CONFIG, "max_retries", 2)
         self.base_backoff = 1.5
         self.backoff_multiplier = 1.5
         self.max_backoff = 3.0  # ✅ МАКСИМАЛЬНАЯ ЗАДЕРЖКА 3 СЕКУНДЫ
@@ -106,14 +108,14 @@ class AIInterpreter:
         # Circuit breaker state
         self._model_failures: Dict[str, int] = {}
         self._model_cooldown_until: Dict[str, float] = {}
-        self._model_cooldown_duration = 300
+        self._model_cooldown_duration = 300  # сек
 
         # Session cache for successful models
         self._preferred_models: Dict[int, Tuple[str, float]] = {}
-        self._preferred_model_ttl = 1800
+        self._preferred_model_ttl = 1800  # сек
 
         self._validate_parameters()
-        # prompt_cache остаётся на будущее/совместимость, но локальная логика перенесена в ai_prompts
+        # оставляем кэш промптов на будущее / совместимость
         self.prompt_cache: Dict[str, str] = {}
         self.cache_size = 50
 
@@ -147,11 +149,13 @@ class AIInterpreter:
         spread_type: str,
         cards: list,
         category: str,
-        user_age: int = None,
-        user_gender: str = None,
-        user_name: str = None,
+        user_age: int | None = None,
+        user_gender: str | None = None,
+        user_name: str | None = None,
         user_id: Optional[int] = None,
-        model: str = None,
+        model: str | None = None,
+        question: str | None = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """
         Генерация интерпретации расклада
@@ -170,7 +174,9 @@ class AIInterpreter:
                 logger.debug(f"🔧 Current model_list order: {model_names}")
 
             profile_context = build_profile_context(
-                user_age=user_age, user_gender=user_gender, user_name=user_name
+                user_age=user_age,
+                user_gender=user_gender,
+                user_name=user_name,
             )
             spread_data = {
                 "spread_type": spread_type,
@@ -183,7 +189,9 @@ class AIInterpreter:
                 cards=cards,
                 question_category=category,
                 profile_context=profile_context,
-            )
+                question=question,   # ✅ добавлено
+             )
+
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"📝 Prompt length: {len(prompt)} characters")
 
@@ -834,7 +842,9 @@ class AIInterpreter:
             spread_type = spread_data.get("spread_type", "unknown")
 
             profile_context = build_profile_context(
-                user_age=user_age, user_gender=user_gender, user_name=user_name
+                user_age=user_age,
+                user_gender=user_gender,
+                user_name=user_name,
             )
 
             prompt = build_question_answer_prompt(
