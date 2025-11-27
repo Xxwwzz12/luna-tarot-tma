@@ -163,7 +163,7 @@ body {
 }
 
 /* =========================================================
-   ВКЛАДКИ (локальные табы)
+   ВКЛАДКИ
    ========================================================= */
 .tabs {
   display: flex;
@@ -265,7 +265,7 @@ body {
 }
 
 /* =========================================================
-   ВСПОМОГАТЕЛЬНЫЕ СТИЛИ
+   ВСПОМОГАТЕЛЬНЫЕ
    ========================================================= */
 .muted {
   font-size: 0.8rem;
@@ -317,7 +317,7 @@ button:disabled {
 }
 
 /* =========================================================
-   КАРУСЕЛЬ ТАРО (обновлено по последнему ТЗ)
+   КАРУСЕЛЬ ТАРО (центрирование + веер + flip)
    ========================================================= */
 .page-spreads {
   display: flex;
@@ -347,7 +347,7 @@ button:disabled {
   margin-top: 12px;
 }
 
-/* Стопка карт — центрируем по горизонтали и вертикали */
+/* Стопка карт — центрируем */
 .tarot-stack {
   position: relative;
   height: 220px;
@@ -367,25 +367,38 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
+  backface-visibility: hidden;
 }
 
 /* Рубашка карты */
 .tarot-card-back {
   font-size: 2rem;
   opacity: 0.9;
+  transition: transform 0.6s ease, opacity 0.6s ease;
 }
 
-/* Основная карта — сверху */
+/* Основная карта */
 .tarot-card.main {
-  position: relative;
+  position: relative; /* важно! */
   z-index: 3;
   cursor: grab;
-  touch-action: pan-y; /* вертикальный скролл остаётся, горизонтальный свайп забираем под себя */
+  touch-action: pan-y;
+  backface-visibility: hidden;
 }
 
-/* Во время перетаскивания */
 .tarot-card.main.dragging {
   cursor: grabbing;
+}
+
+/* Flip animation */
+.tarot-card.main.flipping .tarot-card-back {
+  transform: rotateY(180deg);
+  opacity: 0.9;
+}
+
+/* Spin animation */
+.tarot-card.main.spinning {
+  transition: transform 0.12s ease-out;
 }
 
 /* Призрачные карты */
@@ -408,7 +421,7 @@ button:disabled {
   transform: translateX(30%) rotate(6deg);
 }
 
-/* Низ карусели: кнопки ◀ ▶ + подпись */
+/* Низ карусели */
 .carousel-controls {
   margin-top: 12px;
   display: flex;
@@ -421,7 +434,7 @@ button:disabled {
   flex: 1;
 }
 
-/* Призрачная кнопка (вспомогательная) */
+/* Ghost button */
 .btn-ghost {
   background: transparent;
   border: none;
@@ -468,7 +481,7 @@ button:disabled {
   opacity: 0.7;
 }
 
-/* Шапка секции текущего расклада */
+/* Шапка секции */
 .spread-current-header {
   display: flex;
   justify-content: space-between;
@@ -477,7 +490,7 @@ button:disabled {
   margin-bottom: 6px;
 }
 
-/* Мягкий бейдж — “из истории” и др. */
+/* Бейдж */
 .badge-soft {
   padding: 2px 8px;
   border-radius: 999px;

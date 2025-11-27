@@ -1,34 +1,107 @@
 // tma_frontend/src/TarotCarousel.jsx
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 const TOTAL_CARDS = 78;
-const SWIPE_THRESHOLD = 40; // px
+const SWIPE_THRESHOLD = 40; // px для старта спина
+const MAX_SPIN_STEPS = 18;  // сколько "шагов" прокрутки
+const BASE_DELAY = 60;      // стартовая задержка между шагами (меньше = быстрее)
+const DELAY_GROWTH = 22;    // насколько каждый шаг замедляется
 
-export default function TarotCarousel({
-  selectedCount,
-  maxCards,
-  onSelectCard,
-}) {
+export default function TarotCarousel({ selectedCount, maxCards, onSelectCard }) {
   const [index, setIndex] = useState(0);
   const [dragStartX, setDragStartX] = useState(null);
   const [dragDeltaX, setDragDeltaX] = useState(0);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [direction, setDirection] = useState(1); // 1 → вправо, -1 → влево
+  const [flipState, setFlipState] = useState("idle"); // idle | flipping
+
+  const spinTimerRef = useRef(null);
+
+  // Очистка таймера при размонтировании
+  useEffect(() => {
+    return () => {
+      if (spinTimerRef.current) {
+        clearTimeout(spinTimerRef.current);
+      }
+    };
+  }, []);
+
+  const stepOnce = (dir) => {
+    setIndex((prev) => {
+      let next = prev + dir;
+      if (next < 0) next = TOTAL_CARDS - 1;
+      if (next >= TOTAL_CARDS) next = 0;
+      return next;
+    });
+  };
+
+  const startSpin = (dir) => {
+    // если уже крутим — сначала остановим
+    stopSpin(false);
+    setDirection(dir);
+    setIsSpinning(true);
+
+    const spinStep = (step) => {
+      // постепенно "выдыхаемся"
+      if (step >= MAX_SPIN_STEPS) {
+        setIsSpinning(false);
+        spinTimerRef.current = null;
+        return;
+      }
+
+      stepOnce(dir);
+
+      const delay = BASE_DELAY + step * DELAY_GROWTH;
+
+      spinTimerRef.current = setTimeout(() => {
+        spinStep(step + 1);
+      }, delay);
+    };
+
+    spinStep(0);
+  };
+
+  const stopSpin = (withSelect = false) => {
+    if (spinTimerRef.current) {
+      clearTimeout(spinTimerRef.current);
+      spinTimerRef.current = null;
+    }
+    setIsSpinning(false);
+
+    if (withSelect) {
+      handleChoose();
+    }
+  };
 
   const handlePrev = () => {
-    setIndex((prev) => (prev - 1 + TOTAL_CARDS) % TOTAL_CARDS);
+    if (isSpinning) return;
+    stepOnce(-1);
   };
 
   const handleNext = () => {
-    setIndex((prev) => (prev + 1) % TOTAL_CARDS);
+    if (isSpinning) return;
+    stepOnce(1);
   };
 
   const handleChoose = () => {
     if (selectedCount >= maxCards) return;
+
+    // отдаем выбранный индекс наверх
     onSelectCard(index);
+
+    // короткая "анимация переворота"
+    setFlipState("flipping");
+    setTimeout(() => {
+      setFlipState("idle");
+    }, 600);
   };
 
   const remaining = Math.max(maxCards - selectedCount, 0);
 
+  // --- Жесты ----------------------------------------------------
+
   const startDrag = (clientX) => {
+    if (isSpinning) return; // во время спина жесты не стартуем
     setDragStartX(clientX);
     setDragDeltaX(0);
   };
@@ -43,18 +116,17 @@ export default function TarotCarousel({
 
     const delta = dragDeltaX;
 
+    // Решаем: запускать спин?
     if (Math.abs(delta) > SWIPE_THRESHOLD) {
-      if (delta < 0) {
-        handleNext();
-      } else {
-        handlePrev();
-      }
+      const dir = delta < 0 ? 1 : -1; // влево свайп → крутим вправо
+      startSpin(dir);
     }
 
     setDragStartX(null);
     setDragDeltaX(0);
   };
 
+  // Мышь
   const handleMouseDown = (e) => {
     e.preventDefault();
     startDrag(e.clientX);
@@ -74,6 +146,7 @@ export default function TarotCarousel({
     endDrag();
   };
 
+  // Тач
   const handleTouchStart = (e) => {
     if (!e.touches || e.touches.length === 0) return;
     startDrag(e.touches[0].clientX);
@@ -88,32 +161,57 @@ export default function TarotCarousel({
     endDrag();
   };
 
+  // --- Визуальные эффекты --------------------------------------
+
   const isDragging = dragStartX != null;
 
-  const cardStyle = {
-    transform: `translateX(${dragDeltaX * 0.3}px) rotate(${dragDeltaX * 0.02}deg)`,
-    transition: isDragging ? "none" : "transform 0.18s ease-out",
-  };
+  // небольшое смещение / наклон только при ручном drag
+  const dragStyle = isDragging
+    ? {
+        transform: `translateX(${dragDeltaX * 0.3}px) rotate(${
+          dragDeltaX * 0.02
+        }deg)`,
+        transition: "none",
+      }
+    : isSpinning
+    ? {
+        transform: `rotate(${direction > 0 ? 2 : -2}deg)`,
+        transition: "transform 0.12s ease-out",
+      }
+    : {
+        transform: "none",
+        transition: "transform 0.12s ease-out",
+      };
+
+  const mainCardClasses = [
+    "tarot-card",
+    "main",
+    isDragging ? "dragging" : "",
+    isSpinning ? "spinning" : "",
+    flipState === "flipping" ? "flipping" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div className="card tarot-carousel">
       <p className="section-title">Выбор карт</p>
       <p className="muted small">
-        Проведите по карте влево или вправо, чтобы пролистать колоду. Нажмите
-        «Выбрать карту», когда будете готовы.
+        Свайпните по карте, чтобы раскрутить колоду. Нажмите на карту, чтобы
+        остановить и выбрать её.
       </p>
 
       <div className="tarot-carousel-shell">
         <div className="tarot-stack">
-          {/* Левая «призрачная» карта */}
+          {/* Левая “призрачная” карта */}
           <div className="tarot-card ghost ghost-left">
             <span className="tarot-card-back">🜁</span>
           </div>
 
-          {/* Основная карта — на ней жесты */}
+          {/* Основная карта — вся магия тут */}
           <div
-            className={`tarot-card main ${isDragging ? "dragging" : ""}`}
-            style={cardStyle}
+            className={mainCardClasses}
+            style={dragStyle}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -121,11 +219,21 @@ export default function TarotCarousel({
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
+            onClick={() => {
+              if (isSpinning) {
+                // поймали карту на лету
+                stopSpin(true);
+              } else {
+                handleChoose();
+              }
+            }}
           >
-            <span className="tarot-card-back">🜁</span>
+            <span className="tarot-card-back">
+              {flipState === "flipping" ? "✨" : "🜁"}
+            </span>
           </div>
 
-          {/* Правая «призрачная» карта */}
+          {/* Правая “призрачная” карта */}
           <div className="tarot-card ghost ghost-right">
             <span className="tarot-card-back">🜁</span>
           </div>
@@ -136,6 +244,7 @@ export default function TarotCarousel({
             type="button"
             className="btn-ghost"
             onClick={handlePrev}
+            disabled={isSpinning}
           >
             ◀
           </button>
@@ -146,6 +255,7 @@ export default function TarotCarousel({
             type="button"
             className="btn-ghost"
             onClick={handleNext}
+            disabled={isSpinning}
           >
             ▶
           </button>
@@ -154,10 +264,20 @@ export default function TarotCarousel({
         <button
           type="button"
           className="btn-primary"
-          onClick={handleChoose}
+          onClick={() => {
+            if (isSpinning) {
+              stopSpin(true);
+            } else {
+              handleChoose();
+            }
+          }}
           disabled={selectedCount >= maxCards}
         >
-          {selectedCount >= maxCards ? "Лимит карт выбран" : "Выбрать карту"}
+          {selectedCount >= maxCards
+            ? "Лимит карт выбран"
+            : isSpinning
+            ? "Поймать карту"
+            : "Выбрать карту"}
         </button>
 
         <p className="muted small center">
