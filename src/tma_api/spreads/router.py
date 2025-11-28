@@ -7,7 +7,10 @@ from ..api_response import APIResponse, APIError
 from ..auth.router import get_current_user
 from .service import SpreadService
 from .models import (
-    SpreadQuestionCreate,
+    SpreadCreateIn,
+    SpreadDetail,
+    SpreadListItem,
+    SpreadQuestionIn,      # <- обновлено: вместо SpreadQuestionCreate
     SpreadQuestionModel,
     SpreadQuestionsList,
 )
@@ -58,7 +61,6 @@ def list_spreads(
         page=page,
         limit=limit,
     )
-    # ТЗ: заворачиваем в APIResponse(ok=True, data=data, error=None)
     return APIResponse(ok=True, data=data, error=None)
 
 
@@ -97,18 +99,15 @@ async def create_spread(
 
     try:
         if body.mode == "auto":
-            # ТЗ: обязательный await, сервис сам содержит AI-логику / fallback
             detail = await service.create_auto_spread(
                 user_id=user_id,
                 spread_type=body.spread_type,
                 category=body.category,
                 question=body.question,
             )
-            # ТЗ: возвращаем APIResponse(ok=True, data=SpreadDetail, error=None)
             return APIResponse(ok=True, data=detail, error=None)
 
         elif body.mode == "interactive":
-            # На будущее: интерактивный режим тоже может вызывать AI внутри сервиса
             detail = await service.create_interactive_session(
                 user_id=user_id,
                 spread_type=body.spread_type,
@@ -128,7 +127,6 @@ async def create_spread(
             )
 
     except Exception as e:
-        # Тут могут быть ошибки AI, валидации и т.п. — наружу отдаём 400
         return _error_response(
             response=response,
             http_status=status.HTTP_400_BAD_REQUEST,
@@ -205,20 +203,16 @@ def get_spread_questions(
 @router.post("/{spread_id}/questions", response_model=APIResponse)
 async def add_spread_question(
     spread_id: int,
-    body: SpreadQuestionCreate,
+    body: SpreadQuestionIn,   # <- обновлённый тип
     response: Response,
     user: dict = Depends(get_current_user),
 ):
     try:
-        question_text = body.question
-
-        # ТЗ: async endpoint, ждём AI/интерпретацию внутри сервиса
         item = await service.add_spread_question(
             user_id=user["id"],
             spread_id=spread_id,
-            question=question_text,
+            question=body.question,
         )
-        # ТЗ: APIResponse(ok=True, data=item, error=None)
         return APIResponse(ok=True, data=item, error=None)
 
     except ValueError as e:
@@ -228,6 +222,16 @@ async def add_spread_question(
             data=None,
             error=APIError(
                 code="not_found",
+                message=str(e),
+            ),
+        )
+    except Exception as e:
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        return APIResponse(
+            ok=False,
+            data=None,
+            error=APIError(
+                code="internal_error",
                 message=str(e),
             ),
         )

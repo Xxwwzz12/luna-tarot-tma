@@ -27,18 +27,18 @@ function SpreadsScreen({
   onSpreadTypeChange,
   category,
   onCategoryChange,
-  question,          // это userQuestion из ТЗ
+  question,
   onQuestionChange,
   selectedCards,
   onSelectCard,
-  onCreateSpread,    // теперь получит payload
+  onCreateSpread,
   currentSpread,
 }) {
-  // maxCards строго по ТЗ: 1 для "one", 3 для "three"
   const maxCards = spreadType === "one" ? 1 : 3;
-  const selectedCount = Array.isArray(selectedCards) ? selectedCards.length : 0;
+  const selectedCount = Array.isArray(selectedCards)
+    ? selectedCards.length
+    : 0;
 
-  // дизейбл кнопки — та же логика, что в ТЗ
   const trimmedQuestion = (question || "").trim();
   const isCreateDisabled =
     !spreadType ||
@@ -48,15 +48,14 @@ function SpreadsScreen({
   const handleCreateSpreadClick = () => {
     if (isCreateDisabled) return;
 
-    let payloadCategory: string | null = null;
-    let payloadQuestion: string | null = null;
+    // 🔧 FIX — удалены TypeScript аннотации
+    let payloadCategory = null;
+    let payloadQuestion = null;
 
     if (spreadType === "one") {
-      // ТЗ: для карты дня не используем ни категорию, ни вопрос
       payloadCategory = null;
       payloadQuestion = null;
     } else if (spreadType === "three") {
-      // ТЗ: приоритизируем категорию, иначе используем trimmed userQuestion
       if (category) {
         payloadCategory = category;
         payloadQuestion = null;
@@ -73,7 +72,6 @@ function SpreadsScreen({
       question: payloadQuestion,
     };
 
-    // родитель уже дергает createSpread/apiPost
     onCreateSpread?.(payload);
   };
 
@@ -154,7 +152,7 @@ function SpreadsScreen({
 
             <div className="field">
               <label htmlFor="spread-question" className="field-label">
-                Ваш вопрос (опционально, можно выбрать только тему)
+                Ваш вопрос (опционально)
               </label>
               <textarea
                 id="spread-question"
@@ -162,7 +160,7 @@ function SpreadsScreen({
                 rows={3}
                 value={question || ""}
                 onChange={(e) => onQuestionChange?.(e.target.value)}
-                placeholder="Например: «Что ждёт меня в ближайшие полгода в работе?»"
+                placeholder="Например: «Что ждёт меня в ближайшие полгода?»"
               />
             </div>
           </>
@@ -173,7 +171,7 @@ function SpreadsScreen({
       <section className="card card-cards">
         <h2>Выбор карт</h2>
         <p className="muted">
-          Выберите {maxCards === 1 ? "одну карту" : "несколько карт"} в колоде.
+          Выберите {maxCards === 1 ? "карту" : "несколько карт"} через колоду.
         </p>
 
         <TarotCarousel
@@ -187,16 +185,16 @@ function SpreadsScreen({
         </p>
       </section>
 
-      {/* Кнопка создания расклада */}
+      {/* Кнопка */}
       <section className="card card-actions">
         <button
-          type="button"
           className="btn-primary"
-          onClick={handleCreateSpreadClick}
           disabled={isCreateDisabled}
+          onClick={handleCreateSpreadClick}
         >
           Сделать расклад
         </button>
+
         <p className="muted small">
           Сначала выберите {maxCards === 1 ? "карту" : "несколько карт"} через
           карусель и при необходимости задайте вопрос.
@@ -221,14 +219,15 @@ function SpreadsScreen({
                 <span className="muted small">ID</span>
                 <span>#{currentSpread.id}</span>
               </div>
+
               <div className="spread-meta-row">
                 <span className="muted small">Тип</span>
                 <span>
                   {SPREAD_TYPE_LABELS[currentSpread.spread_type] ||
-                    currentSpread.spread_type ||
-                    "—"}
+                    currentSpread.spread_type}
                 </span>
               </div>
+
               <div className="spread-meta-row">
                 <span className="muted small">Категория</span>
                 <span>
@@ -237,6 +236,7 @@ function SpreadsScreen({
                     : "—"}
                 </span>
               </div>
+
               {currentSpread.question && (
                 <div className="spread-meta-row">
                   <span className="muted small">Вопрос</span>

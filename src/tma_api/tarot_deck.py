@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 from functools import lru_cache
 from pathlib import Path
 from typing import TypedDict, NotRequired, Any
+
+logger = logging.getLogger(__name__)
 
 
 class TarotCard(TypedDict, total=False):
@@ -22,7 +25,13 @@ class TarotCard(TypedDict, total=False):
     is_reversed: NotRequired[bool]
     image_url: NotRequired[str]
     # допускаем дополнительные ключи без явного описания
-    # (json.load вернёт dict[str, Any], TypedDict с total=False это допускает)
+
+
+# .../project_root, если файл лежит так:
+# project_root/
+#   data/tarot_deck.json
+#   src/tma_api/tarot_deck.py
+BASE_DIR = Path(__file__).resolve().parents[2]
 
 
 @lru_cache
@@ -36,17 +45,25 @@ def _load_deck() -> list[TarotCard]:
     }
     либо просто список карт в корне.
     """
-    base_dir = Path(__file__).resolve().parent.parent
-    deck_path = base_dir / "tarot_engine" / "data" / "tarot_deck.json"
+    deck_path = BASE_DIR / "data" / "tarot_deck.json"
+    logger.info("Loading tarot deck from %s", deck_path)
 
     with deck_path.open("r", encoding="utf-8") as f:
         raw: Any = json.load(f)
 
     if isinstance(raw, dict) and "cards" in raw:
-        return raw["cards"]  # type: ignore[return-value]
+        cards = raw["cards"]
+    else:
+        cards = raw
 
-    # fallback: если в корне уже список
-    return raw  # type: ignore[return-value]
+    try:
+        size = len(cards)  # type: ignore[arg-type]
+    except Exception:
+        size = -1
+
+    logger.info("Tarot deck loaded successfully (cards: %s)", size)
+
+    return cards  # type: ignore[return-value]
 
 
 def draw_random_cards(count: int) -> list[TarotCard]:
