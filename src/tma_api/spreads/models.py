@@ -1,5 +1,3 @@
-# src/tma_api/spreads/models.py
-
 from __future__ import annotations
 
 from typing import Any, Dict, Literal
@@ -20,8 +18,9 @@ class SpreadListItem(BaseModel):
     spread_type: str
     category: str
     created_at: str  # ISO date string
-    short_preview: str
-    has_questions: bool
+    short_preview: str | None = None
+    has_questions: bool = False
+    interpretation: str | None = None  # 👈 Добавлено по ТЗ
 
 
 class SpreadDetail(BaseModel):
@@ -76,7 +75,7 @@ class SpreadQuestionCreate(BaseModel):
 class SpreadQuestionModel(BaseModel):
     id: int
     spread_id: int
-    user_id: int                     # ← добавлено по ТЗ
+    user_id: int
     question: str
     answer: str | None
     status: Literal["pending", "ready", "failed"]

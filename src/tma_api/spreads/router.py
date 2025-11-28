@@ -27,6 +27,7 @@ def _error_response(
     response.status_code = http_status
     return APIResponse(
         ok=False,
+        data=None,
         error=APIError(
             code=code,
             message=message,
@@ -35,7 +36,7 @@ def _error_response(
     )
 
 
-# 1. GET /spreads — список
+# 1. GET /spreads — список раскладов
 @router.get("", response_model=APIResponse)
 def list_spreads(
     response: Response,
@@ -45,39 +46,47 @@ def list_spreads(
 ):
     if page < 1 or limit < 1:
         return _error_response(
-            response,
-            status.HTTP_400_BAD_REQUEST,
-            "validation_error",
-            "page and limit must be >= 1",
-            {"page": page, "limit": limit},
+            response=response,
+            http_status=status.HTTP_400_BAD_REQUEST,
+            code="validation_error",
+            message="page and limit must be >= 1",
+            details={"page": page, "limit": limit},
         )
 
-    data = service.get_spreads_list(user_id=user["id"], page=page, limit=limit)
-    return APIResponse(ok=True, data=data)
+    data = service.get_spreads_list(
+        user_id=user["id"],
+        page=page,
+        limit=limit,
+    )
+    # ТЗ: заворачиваем в APIResponse(ok=True, data=data, error=None)
+    return APIResponse(ok=True, data=data, error=None)
 
 
-# 2. GET /spreads/{spread_id}
+# 2. GET /spreads/{spread_id} — детальный расклад
 @router.get("/{spread_id}", response_model=APIResponse)
 def get_spread(
     spread_id: int,
     response: Response,
     user: dict = Depends(get_current_user),
 ):
-    spread = service.get_spread(user_id=user["id"], spread_id=spread_id)
+    detail = service.get_spread(
+        user_id=user["id"],
+        spread_id=spread_id,
+    )
 
-    if spread is None:
+    if detail is None:
         return _error_response(
-            response,
-            status.HTTP_404_NOT_FOUND,
-            "not_found",
-            "Spread not found",
-            {"spread_id": spread_id},
+            response=response,
+            http_status=status.HTTP_404_NOT_FOUND,
+            code="not_found",
+            message="Spread not found",
+            details={"spread_id": spread_id},
         )
 
-    return APIResponse(ok=True, data=spread)
+    return APIResponse(ok=True, data=detail, error=None)
 
 
-# 3. POST /spreads — авто и интерактив (ASYNC для AI)
+# 3. POST /spreads — создать расклад (async, для AI)
 @router.post("", response_model=APIResponse)
 async def create_spread(
     body: models.SpreadCreateIn,
@@ -88,45 +97,47 @@ async def create_spread(
 
     try:
         if body.mode == "auto":
-            # Предполагаем, что сервисный слой теперь async и сам вызывает AI
-            result = await service.create_auto_spread(
+            # ТЗ: обязательный await, сервис сам содержит AI-логику / fallback
+            detail = await service.create_auto_spread(
                 user_id=user_id,
                 spread_type=body.spread_type,
                 category=body.category,
                 question=body.question,
             )
-            return APIResponse(ok=True, data=result, error=None)
+            # ТЗ: возвращаем APIResponse(ok=True, data=SpreadDetail, error=None)
+            return APIResponse(ok=True, data=detail, error=None)
 
         elif body.mode == "interactive":
-            # Аналогично для интерактива — AI может вызываться внутри сервиса
-            result = await service.create_interactive_session(
+            # На будущее: интерактивный режим тоже может вызывать AI внутри сервиса
+            detail = await service.create_interactive_session(
                 user_id=user_id,
                 spread_type=body.spread_type,
                 category=body.category,
                 positions=getattr(body, "positions", []),
                 choices_per_position=getattr(body, "choices_per_position", 0),
             )
-            return APIResponse(ok=True, data=result, error=None)
+            return APIResponse(ok=True, data=detail, error=None)
 
         else:
             return _error_response(
-                response,
-                status.HTTP_400_BAD_REQUEST,
-                "validation_error",
-                "Unknown mode for spread creation",
-                {"mode": body.mode},
+                response=response,
+                http_status=status.HTTP_400_BAD_REQUEST,
+                code="validation_error",
+                message="Unknown mode for spread creation",
+                details={"mode": body.mode},
             )
 
     except Exception as e:
+        # Тут могут быть ошибки AI, валидации и т.п. — наружу отдаём 400
         return _error_response(
-            response,
-            status.HTTP_400_BAD_REQUEST,
-            "bad_request",
-            str(e),
+            response=response,
+            http_status=status.HTTP_400_BAD_REQUEST,
+            code="bad_request",
+            message=str(e),
         )
 
 
-# 4. POST /spreads/session/{id}/select_card
+# 4. POST /spreads/session/{session_id}/select_card — выбор карты в интерактивной сессии
 @router.post("/session/{session_id}/select_card", response_model=APIResponse)
 def select_card(
     session_id: str,
@@ -134,33 +145,37 @@ def select_card(
     response: Response,
     user: dict = Depends(get_current_user),
 ):
-    session = service.select_card(session_id, body.position, body.choice_index)
+    session = service.select_card(
+        session_id=session_id,
+        position=body.position,
+        choice_index=body.choice_index,
+    )
 
     if not session:
         return _error_response(
-            response,
-            status.HTTP_404_NOT_FOUND,
-            "not_found",
-            "Session not found",
-            {"session_id": session_id},
+            response=response,
+            http_status=status.HTTP_404_NOT_FOUND,
+            code="not_found",
+            message="Session not found",
+            details={"session_id": session_id},
         )
 
     if session.get("status") == "awaiting_selection":
-        return APIResponse(ok=True, data=session)
+        return APIResponse(ok=True, data=session, error=None)
 
     if "spread" in session:
-        return APIResponse(ok=True, data=session["spread"])
+        return APIResponse(ok=True, data=session["spread"], error=None)
 
     return _error_response(
-        response,
-        status.HTTP_400_BAD_REQUEST,
-        "bad_request",
-        "Invalid session state",
-        {"session_id": session_id, "session": session},
+        response=response,
+        http_status=status.HTTP_400_BAD_REQUEST,
+        code="bad_request",
+        message="Invalid session state",
+        details={"session_id": session_id, "session": session},
     )
 
 
-# 5. GET /spreads/{spread_id}/questions
+# 5. GET /spreads/{spread_id}/questions — список вопросов (синхронный)
 @router.get("/{spread_id}/questions", response_model=APIResponse)
 def get_spread_questions(
     spread_id: int,
@@ -173,16 +188,20 @@ def get_spread_questions(
             spread_id=spread_id,
         )
         return APIResponse(ok=True, data=items, error=None)
+
     except ValueError as e:
         response.status_code = status.HTTP_404_NOT_FOUND
         return APIResponse(
             ok=False,
             data=None,
-            error=APIError(code="not_found", message=str(e)),
+            error=APIError(
+                code="not_found",
+                message=str(e),
+            ),
         )
 
 
-# 6. POST /spreads/{spread_id}/questions — ASYNC для AI-ответа
+# 6. POST /spreads/{spread_id}/questions — задать вопрос (async, AI-ответ)
 @router.post("/{spread_id}/questions", response_model=APIResponse)
 async def add_spread_question(
     spread_id: int,
@@ -191,12 +210,15 @@ async def add_spread_question(
     user: dict = Depends(get_current_user),
 ):
     try:
-        # Предполагаем, что add_spread_question теперь async и внутри вызывает AIInterpreter
+        question_text = body.question
+
+        # ТЗ: async endpoint, ждём AI/интерпретацию внутри сервиса
         item = await service.add_spread_question(
             user_id=user["id"],
             spread_id=spread_id,
-            question=body.question,
+            question=question_text,
         )
+        # ТЗ: APIResponse(ok=True, data=item, error=None)
         return APIResponse(ok=True, data=item, error=None)
 
     except ValueError as e:
@@ -204,5 +226,8 @@ async def add_spread_question(
         return APIResponse(
             ok=False,
             data=None,
-            error=APIError(code="not_found", message=str(e)),
+            error=APIError(
+                code="not_found",
+                message=str(e),
+            ),
         )

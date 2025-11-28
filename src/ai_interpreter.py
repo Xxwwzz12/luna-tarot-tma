@@ -29,7 +29,6 @@ except ImportError as e:
             self.max_tokens = int(os.getenv("OPENROUTER_MAX_TOKENS", "1000"))
             self.temperature = float(os.getenv("OPENROUTER_TEMPERATURE", "0.7"))
             self.timeout = int(os.getenv("OPENROUTER_TIMEOUT", "30"))
-            # опционально — max_retries из ENV
             self.max_retries = int(os.getenv("OPENROUTER_MAX_RETRIES", "2"))
 
     OPENROUTER_CONFIG = _EnvOpenRouterConfig()
@@ -40,7 +39,7 @@ except ImportError as e:
         if models:
             return models
 
-        # жёсткий fallback на бесплатные модели
+        # жёсткий fallback на бесплатные модели, чтобы вообще что-то работало
         return [
             "meta-llama/llama-3.3-70b-instruct:free",
             "google/gemma-2-9b-it:free",
@@ -57,12 +56,15 @@ from .ai_prompts import (
 # ✅ НАСТРОЙКА ЛОГГЕРА: предотвращаем дублирование
 logger.propagate = False
 
+# Минимальная длина “осмысленного” ответа в символах
+MIN_RESPONSE_LENGTH = 120
+
 
 class AIInterpreter:
     def __init__(self):
         self.api_key = OPENROUTER_CONFIG.api_key
 
-        # ✅ Единый список моделей из конфига
+        # ✅ Единый источник моделей
         models: list[str] = []
         try:
             models = get_available_models()
@@ -72,15 +74,20 @@ class AIInterpreter:
 
         self.model_list = models or []
         if not self.model_list:
-            logger.error("🚨 CRITICAL: model_list is empty! Using fallback meta-llama")
-            self.model_list = ["meta-llama/llama-3.3-70b-instruct"]
+            logger.critical(
+                "🚨 CRITICAL: get_available_models() returned empty list, using local fallback"
+            )
+            self.model_list = [
+                "meta-llama/llama-3.3-70b-instruct:free",
+            ]
 
         model_names = [m.split("/")[-1] for m in self.model_list]
         logger.info(f"🔧 AIInterpreter model_list order: {model_names}")
 
         self.base_url = OPENROUTER_CONFIG.base_url
         self.max_tokens = OPENROUTER_CONFIG.max_tokens
-        self.temperature = 1.0  # при желании можно взять из OPENROUTER_CONFIG.temperature
+        # Базовая температура (при желании можно взять из OPENROUTER_CONFIG.temperature)
+        self.temperature = 1.0
 
         # ✅ PER-MODEL таймауты
         self.request_timeout = getattr(OPENROUTER_CONFIG, "timeout", 60)
@@ -105,11 +112,11 @@ class AIInterpreter:
         # Circuit breaker
         self._model_failures: Dict[str, int] = {}
         self._model_cooldown_until: Dict[str, float] = {}
-        self._model_cooldown_duration = 300
+        self._model_cooldown_duration = 300  # сек
 
         # Кэш предпочтительных моделей по пользователю
         self._preferred_models: Dict[int, Tuple[str, float]] = {}
-        self._preferred_model_ttl = 1800
+        self._preferred_model_ttl = 1800  # сек
 
         self._validate_parameters()
         self.prompt_cache: Dict[str, str] = {}
@@ -118,6 +125,8 @@ class AIInterpreter:
         logger.info(
             f"✅ AI Interpreter initialized with {len(self.model_list)} models"
         )
+
+    # ──────────────────────────── ВАЛИДАЦИЯ НАСТРОЕК ────────────────────────────
 
     def _validate_parameters(self):
         if not (0 <= self.temperature <= 2):
@@ -137,26 +146,29 @@ class AIInterpreter:
         backoff = self.base_backoff * (self.backoff_multiplier ** attempt)
         return min(backoff, self.max_backoff)
 
+    # ──────────────────────────── ПУБЛИЧНЫЙ МЕТОД: ИНТЕРПРЕТАЦИЯ ────────────────────────────
+
     async def generate_interpretation(
         self,
         spread_type: str,
         cards: list,
-        category: str,
+        category: str | None = None,
+        question: str | None = None,
         user_age: int | None = None,
         user_gender: str | None = None,
         user_name: str | None = None,
-        user_id: Optional[int] = None,
+        user_id: int | None = None,
         model: str | None = None,
-        question: str | None = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """
-        Генерация интерпретации расклада
-        Returns: {success, text, model, error}
+        Генерация интерпретации расклада.
+
+        Возвращает dict: {success, text, model, error}
         """
         try:
             logger.info(
-                f"🎯 Generating interpretation for {len(cards)} cards, category: {category}"
+                f"🎯 Generating interpretation for {len(cards)} cards, category: {category}, question: {bool(question)}"
             )
 
             if logger.isEnabledFor(logging.DEBUG):
@@ -173,7 +185,7 @@ class AIInterpreter:
                 "cards": cards,
             }
 
-            # Промпт через общий билдер, уже с учётом вопроса
+            # Промпт через общий билдер (учитывает category + question + профиль)
             prompt = build_spread_interpretation_prompt(
                 spread_type=spread_type,
                 cards=cards,
@@ -218,17 +230,18 @@ class AIInterpreter:
                         "model": model,
                         "error": None,
                     }
-                else:
-                    logger.warning(
-                        f"❌ Model {model} failed: {result.get('error', 'Unknown error')}"
-                    )
-                    self._record_model_failure(model)
-                    return result
+
+                logger.warning(
+                    f"❌ Model {model} failed: {result.get('error', 'Unknown error')}"
+                )
+                self._record_model_failure(model)
+                return result
 
             # ✅ Стандартная логика с fallback
             return await self._generate_with_fallback(
                 spread_data=spread_data,
                 category=category,
+                question=question,
                 profile_context=profile_context,
                 user_id=user_id,
             )
@@ -242,14 +255,17 @@ class AIInterpreter:
                 "error": f"Unexpected error: {str(e)}",
             }
 
+    # ──────────────────────────── FALLBACK / CIRCUIT BREAKER ────────────────────────────
+
     async def _generate_with_fallback(
         self,
         spread_data: Dict,
-        category: str,
+        category: str | None,
+        question: str | None,
         profile_context: str,
         user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Перебор моделей с кэшем и circuit breaker"""
+        """Перебор моделей с кэшем и circuit breaker."""
         preferred_model = self._get_preferred_model(user_id)
         models_to_try = self.model_list.copy()
 
@@ -277,7 +293,7 @@ class AIInterpreter:
                 model=model,
                 spread_data=spread_data,
                 category=category,
-                question=None,
+                question=question,
                 profile_context=profile_context,
             )
 
@@ -298,15 +314,16 @@ class AIInterpreter:
                     "model": model,
                     "error": None,
                 }
-            else:
-                logger.warning(
-                    f"❌ Model {model} failed: {result.get('error', 'Unknown error')}"
-                )
-                self._record_model_failure(model)
-                continue
+
+            logger.warning(
+                f"❌ Model {model} failed: {result.get('error', 'Unknown error')}"
+            )
+            self._record_model_failure(model)
 
         logger.error("❌ All AI models failed to generate interpretation")
-        fallback_text = self._generate_basic_interpretation(spread_data, category)
+        fallback_text = self._generate_basic_interpretation(
+            spread_data, category or "общая тема"
+        )
 
         return {
             "success": False,
@@ -315,16 +332,21 @@ class AIInterpreter:
             "error": "All models failed to generate valid interpretation",
         }
 
+    # ──────────────────────────── НИЗКОУРОВНЕВЫЙ ВЫЗОВ OPENROUTER ────────────────────────────
+
     async def _make_llm_request(
         self,
         model: str,
-        prompt: Optional[str] = None,
-        spread_data: Optional[Dict] = None,
-        category: Optional[str] = None,
-        question: Optional[str] = None,
+        prompt: str | None = None,
+        spread_data: dict | None = None,
+        category: str | None = None,
+        question: str | None = None,
         profile_context: str = "",
     ) -> Dict[str, Any]:
-        """Низкоуровневый вызов OpenRouter"""
+        """
+        Низкоуровневый вызов OpenRouter.
+        Общий для интерпретаций и ответов на вопросы.
+        """
 
         if prompt is None:
             if not spread_data:
@@ -444,9 +466,6 @@ class AIInterpreter:
 
                         else:
                             error_text = await response.text()
-                            end_time = time.time()
-                            elapsed = end_time - start_time
-
                             logger.error(
                                 f"❌ API Error {response.status} for {model}: {error_text}"
                             )
@@ -483,8 +502,7 @@ class AIInterpreter:
                             }
 
             except asyncio.TimeoutError:
-                end_time = time.time()
-                elapsed = end_time - start_time
+                elapsed = time.time() - start_time
                 timeout_setting = self._get_request_timeout(model)
 
                 logger.warning(
@@ -507,9 +525,6 @@ class AIInterpreter:
                 await asyncio.sleep(wait_time)
 
             except Exception as e:
-                end_time = time.time()
-                elapsed = end_time - start_time
-
                 logger.error(
                     f"❌ Model {model} error on attempt {attempt + 1}: {str(e)}"
                 )
@@ -535,6 +550,8 @@ class AIInterpreter:
             "model": model,
             "error": f"All {self.max_retries} attempts failed",
         }
+
+    # ──────────────────────────── PAYLOAD / CIRCUIT ────────────────────────────
 
     def _validate_payload(self, payload: Dict) -> Dict:
         validated_payload = payload.copy()
@@ -600,8 +617,7 @@ class AIInterpreter:
                         f"🎯 Using preferred model {model} for user {user_id}"
                     )
                 return model
-            else:
-                del self._preferred_models[user_id]
+            del self._preferred_models[user_id]
 
         return None
 
@@ -614,35 +630,70 @@ class AIInterpreter:
                     f"💾 Cached preferred model {model} for user {user_id}"
                 )
 
+    # ──────────────────────────── ВАЛИДАЦИЯ ОТВЕТА ────────────────────────────
+
     def _contains_english_text(self, text: str) -> bool:
+        """Грубая проверка на наличие “массы” английских слов."""
         if not text:
             return False
 
         english_word_pattern = re.compile(r"\b[a-zA-Z]{3,}\b")
         english_words = english_word_pattern.findall(text)
 
-        if len(english_words) >= 2:
+        if len(english_words) >= 3:
             logger.warning(
-                f"🚨 Detected English words in response: {english_words[:3]}"
+                f"🚨 Detected English words in response: {english_words[:5]}"
             )
             return True
 
         return False
 
+    def _cyrillic_ratio(self, text: str) -> float:
+        """Оцениваем долю кириллических букв."""
+        if not text:
+            return 0.0
+
+        letters = [ch for ch in text if ch.isalpha()]
+        if not letters:
+            return 0.0
+
+        cyr = [ch for ch in letters if "а" <= ch.lower() <= "я" or ch.lower() == "ё"]
+        return len(cyr) / len(letters)
+
     def _is_valid_interpretation(self, interpretation: str) -> bool:
-        if not interpretation or len(interpretation.strip()) < 50:
-            logger.warning("❌ Invalid interpretation: too short")
+        """
+        Усиленная валидация ответа:
+        - длина
+        - доля кириллицы
+        - отсеивание типичных отказов/ненужных фраз
+        - отсутствие "болтовни" на английском
+        """
+        if not interpretation:
+            logger.warning("❌ Invalid interpretation: empty")
             return False
 
-        interpretation_lower = interpretation.lower()
+        stripped = interpretation.strip()
+        if len(stripped) < MIN_RESPONSE_LENGTH:
+            logger.warning(
+                f"❌ Invalid interpretation: too short (len={len(stripped)}, min={MIN_RESPONSE_LENGTH})"
+            )
+            return False
 
+        interpretation_lower = stripped.lower()
+
+        # Типичные отказные/служебные шаблоны, особенно на английском
         forbidden_phrases = [
+            "as an ai language model",
+            "i am an ai language model",
             "provide me with more context",
             "could you please provide",
             "what would you like me to do",
             "i need more information",
             "please provide",
             "tell me more",
+            "i'm unable to",
+            "i cannot",
+            "i'm sorry, but",
             "какую задачу",
             "что вы хотите",
             "пожалуйста, предоставьте",
@@ -659,11 +710,21 @@ class AIInterpreter:
                 )
                 return False
 
+        # Доля кириллицы
+        ratio = self._cyrillic_ratio(interpretation)
+        if ratio < 0.5:
+            logger.warning(
+                f"❌ Invalid interpretation - low Cyrillic ratio: {ratio:.2f}"
+            )
+            return False
+
+        # Грубый детект “много английского”
         if self._contains_english_text(interpretation):
             logger.warning("❌ Invalid interpretation - contains English text")
             return False
 
-        if interpretation_lower.count("?") > 2:
+        # Немного эвристик по структуре
+        if interpretation_lower.count("?") > 3:
             logger.warning("❌ Invalid interpretation - too many questions")
             return False
 
@@ -673,11 +734,14 @@ class AIInterpreter:
 
         return True
 
+    # ──────────────────────────── ПОСТ-ОБРАБОТКА ────────────────────────────
+
     def _clean_ai_response(self, text: str) -> str:
+        """Чистка AI-ответа от reasoning-блоков и англицизмов."""
         if not text:
             return text
 
-        # Чистим <think>...</think>
+        # Удаляем внутренний монолог reasoning-моделей (<think>...</think>)
         if "<think>" in text:
             if "</think>" in text:
                 text = text.split("</think>", 1)[1]
@@ -710,6 +774,7 @@ class AIInterpreter:
         return text
 
     def _clean_response(self, response: str) -> str:
+        """Лёгкая чистка вводных фраз."""
         if not response:
             return response
 
@@ -732,9 +797,12 @@ class AIInterpreter:
 
         return response
 
+    # ──────────────────────────── ЛОКАЛЬНЫЙ FALLBACK ────────────────────────────
+
     def _generate_basic_interpretation(
         self, spread_data: dict, question_category: str
     ) -> str:
+        """Примитивный текст, если все модели упали."""
         cards = spread_data["cards"]
         spread_type = spread_data["spread_type"]
 
@@ -781,15 +849,18 @@ class AIInterpreter:
         )
         return interpretation
 
+    # ──────────────────────────── ОТВЕТЫ НА ВОПРОСЫ ПО РАСКЛАДУ ────────────────────────────
+
     async def generate_question_answer(
         self,
         spread_id: int,
         user_id: int,
         question: str,
-        user_age: int = None,
-        user_gender: str = None,
-        user_name: str = None,
+        user_age: int | None = None,
+        user_gender: str | None = None,
+        user_name: str | None = None,
     ) -> Dict[str, Any]:
+        """Генерация ответа на вопрос по уже сделанному раскладу."""
         logger.info(f"🎯 Generating answer for question: {question}")
 
         try:
@@ -841,7 +912,9 @@ class AIInterpreter:
                     )
 
                 result = await self._make_llm_request(
-                    model=model, prompt=prompt, profile_context=profile_context
+                    model=model,
+                    prompt=prompt,
+                    profile_context=profile_context,
                 )
 
                 if result["success"] and self._is_valid_interpretation(result["text"]):
@@ -861,12 +934,11 @@ class AIInterpreter:
                         "model": model,
                         "error": None,
                     }
-                else:
-                    logger.warning(
-                        f"❌ Model {model} failed for question: {result.get('error', 'Unknown error')}"
-                    )
-                    self._record_model_failure(model)
-                    continue
+
+                logger.warning(
+                    f"❌ Model {model} failed for question: {result.get('error', 'Unknown error')}"
+                )
+                self._record_model_failure(model)
 
             logger.error("❌ All models failed for question answering")
             return {
@@ -885,7 +957,10 @@ class AIInterpreter:
                 "error": f"Critical error: {str(e)}",
             }
 
+    # ──────────────────────────── УТИЛИТЫ ДЛЯ РАСКЛАДОВ ────────────────────────────
+
     def _format_cards_text(self, spread_data: Dict) -> str:
+        """Форматирование карт для промпта вопроса."""
         cards = spread_data.get("cards", [])
         if isinstance(cards, str):
             try:
@@ -920,6 +995,7 @@ class AIInterpreter:
         return cards_text
 
     def _get_spread_data(self, spread_id: int, user_id: int):
+        """Достаём сохранённый расклад пользователя из БД."""
         try:
             from src.user_database import UserDatabase
 
@@ -932,8 +1008,7 @@ class AIInterpreter:
                     if isinstance(history, list) and len(history) > 0
                     else history
                 )
-            else:
-                return None
+            return None
 
         except Exception as e:
             logger.error(
