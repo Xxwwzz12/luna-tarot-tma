@@ -1,6 +1,6 @@
 // tma_frontend/src/TarotCarousel.jsx
 import React, { useState, useRef, useEffect } from "react";
-import TarotCardView from "./TarotCardView";
+import TarotCardView from "./components/TarotCardView";
 
 const TOTAL_CARDS = 78;
 const SWIPE_THRESHOLD = 40; // px для старта спина
@@ -18,7 +18,7 @@ export default function TarotCarousel({
   const [dragStartX, setDragStartX] = useState(null);
   const [dragDeltaX, setDragDeltaX] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
-  const [direction, setDirection] = useState(1); // 1 → вправо, -1 → влево
+  const [direction, setDirection] = useState(1);
   const [flipState, setFlipState] = useState("idle"); // idle | flipping
 
   const spinTimerRef = useRef(null);
@@ -26,9 +26,7 @@ export default function TarotCarousel({
   // Очистка таймера при размонтировании
   useEffect(() => {
     return () => {
-      if (spinTimerRef.current) {
-        clearTimeout(spinTimerRef.current);
-      }
+      if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
     };
   }, []);
 
@@ -42,13 +40,11 @@ export default function TarotCarousel({
   };
 
   const startSpin = (dir) => {
-    // если уже крутим — сначала остановим
     stopSpin(false);
     setDirection(dir);
     setIsSpinning(true);
 
     const spinStep = (step) => {
-      // постепенно "выдыхаемся"
       if (step >= MAX_SPIN_STEPS) {
         setIsSpinning(false);
         spinTimerRef.current = null;
@@ -58,10 +54,10 @@ export default function TarotCarousel({
       stepOnce(dir);
 
       const delay = BASE_DELAY + step * DELAY_GROWTH;
-
-      spinTimerRef.current = setTimeout(() => {
-        spinStep(step + 1);
-      }, delay);
+      spinTimerRef.current = setTimeout(
+        () => spinStep(step + 1),
+        delay
+      );
     };
 
     spinStep(0);
@@ -73,41 +69,32 @@ export default function TarotCarousel({
       spinTimerRef.current = null;
     }
     setIsSpinning(false);
-
-    if (withSelect) {
-      handleChoose();
-    }
+    if (withSelect) handleChoose();
   };
 
   const handlePrev = () => {
-    if (isSpinning) return;
-    stepOnce(-1);
+    if (!isSpinning) stepOnce(-1);
   };
 
   const handleNext = () => {
-    if (isSpinning) return;
-    stepOnce(1);
+    if (!isSpinning) stepOnce(1);
   };
 
   const handleChoose = () => {
     if (selectedCount >= maxCards) return;
 
-    // отдаем выбранный индекс наверх
     onSelectCard(index);
 
-    // короткая "анимация переворота"
     setFlipState("flipping");
-    setTimeout(() => {
-      setFlipState("idle");
-    }, 600);
+    setTimeout(() => setFlipState("idle"), 600);
   };
 
   const remaining = Math.max(maxCards - selectedCount, 0);
 
-  // --- Жесты ----------------------------------------------------
+  // 👉 Свайпы ---------------------------------------------------------
 
   const startDrag = (clientX) => {
-    if (isSpinning) return; // во время спина жесты не стартуем
+    if (isSpinning) return;
     setDragStartX(clientX);
     setDragDeltaX(0);
   };
@@ -122,9 +109,8 @@ export default function TarotCarousel({
 
     const delta = dragDeltaX;
 
-    // Решаем: запускать спин?
     if (Math.abs(delta) > SWIPE_THRESHOLD) {
-      const dir = delta < 0 ? 1 : -1; // влево свайп → крутим вправо
+      const dir = delta < 0 ? 1 : -1;
       startSpin(dir);
     }
 
@@ -132,7 +118,6 @@ export default function TarotCarousel({
     setDragDeltaX(0);
   };
 
-  // Мышь
   const handleMouseDown = (e) => {
     e.preventDefault();
     startDrag(e.clientX);
@@ -144,38 +129,26 @@ export default function TarotCarousel({
     moveDrag(e.clientX);
   };
 
-  const handleMouseUp = () => {
-    endDrag();
-  };
+  const handleMouseUp = () => endDrag();
+  const handleMouseLeave = () => endDrag();
 
-  const handleMouseLeave = () => {
-    endDrag();
-  };
-
-  // Тач
   const handleTouchStart = (e) => {
-    if (!e.touches || e.touches.length === 0) return;
-    startDrag(e.touches[0].clientX);
+    if (e.touches?.length) startDrag(e.touches[0].clientX);
   };
 
   const handleTouchMove = (e) => {
-    if (!e.touches || e.touches.length === 0) return;
-    moveDrag(e.touches[0].clientX);
+    if (e.touches?.length) moveDrag(e.touches[0].clientX);
   };
 
-  const handleTouchEnd = () => {
-    endDrag();
-  };
+  const handleTouchEnd = () => endDrag();
 
-  // --- Визуальные эффекты --------------------------------------
+  // 👉 Визуальные эффекты -------------------------------------------------
 
   const isDragging = dragStartX != null;
 
   const dragStyle = isDragging
     ? {
-        transform: `translateX(${dragDeltaX * 0.3}px) rotate(${
-          dragDeltaX * 0.02
-        }deg)`,
+        transform: `translateX(${dragDeltaX * 0.3}px) rotate(${dragDeltaX * 0.02}deg)`,
         transition: "none",
       }
     : isSpinning
@@ -198,29 +171,34 @@ export default function TarotCarousel({
     .filter(Boolean)
     .join(" ");
 
-  // --- Режимы отображения выбранных карт ------------------------
+  // 👉 Финальный режим --------------------------------------------------
 
   const isOneMode = maxCards === 1;
   const isThreeMode = maxCards === 3;
 
   const hasOneSelected = isOneMode && selectedCards.length === 1;
   const hasThreeSelected = isThreeMode && selectedCards.length === 3;
+
   const hasFullSelection = hasOneSelected || hasThreeSelected;
 
   return (
     <div className="card tarot-carousel">
       <p className="section-title">Выбор карт</p>
+
       <p className="muted small">
         {hasFullSelection
-          ? "Ваши карты расклада:"
+          ? "Ваши карты:"
           : "Свайпните по карте, чтобы раскрутить колоду. Нажмите на карту, чтобы остановить и выбрать её."}
       </p>
 
       <div className="tarot-carousel-shell">
-        {/* ФИНАЛЬНЫЙ РЕЖИМ: только выбранные карты, без карусели */}
+        {/* ---- ФИНАЛЬНЫЙ РЕЖИМ ---- */}
         {hasOneSelected && (
           <div className="tarot-result-stack one">
-            <TarotCardView card={selectedCards[0]} positionLabel="Карта дня" />
+            <TarotCardView
+              card={selectedCards[0]}
+              positionLabel="Карта дня"
+            />
           </div>
         )}
 
@@ -241,16 +219,14 @@ export default function TarotCarousel({
           </div>
         )}
 
-        {/* Если выбор ещё не завершён — старое поведение */}
+        {/* ---- Пока выбор не завершён → старое поведение ---- */}
         {!hasFullSelection && (
           <>
             <div className="tarot-stack">
-              {/* Левая “призрачная” карта */}
               <div className="tarot-card ghost ghost-left">
                 <span className="tarot-card-back">🜁</span>
               </div>
 
-              {/* Основная карта — вся магия тут */}
               <div
                 className={mainCardClasses}
                 style={dragStyle}
@@ -262,12 +238,8 @@ export default function TarotCarousel({
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
                 onClick={() => {
-                  if (isSpinning) {
-                    // поймали карту на лету
-                    stopSpin(true);
-                  } else {
-                    handleChoose();
-                  }
+                  if (isSpinning) stopSpin(true);
+                  else handleChoose();
                 }}
               >
                 <span className="tarot-card-back">
@@ -275,7 +247,6 @@ export default function TarotCarousel({
                 </span>
               </div>
 
-              {/* Правая “призрачная” карта */}
               <div className="tarot-card ghost ghost-right">
                 <span className="tarot-card-back">🜁</span>
               </div>
@@ -306,13 +277,9 @@ export default function TarotCarousel({
             <button
               type="button"
               className="btn-primary"
-              onClick={() => {
-                if (isSpinning) {
-                  stopSpin(true);
-                } else {
-                  handleChoose();
-                }
-              }}
+              onClick={() =>
+                isSpinning ? stopSpin(true) : handleChoose()
+              }
               disabled={selectedCount >= maxCards}
             >
               {selectedCount >= maxCards
@@ -321,15 +288,12 @@ export default function TarotCarousel({
                 ? "Поймать карту"
                 : "Выбрать карту"}
             </button>
-          </>
-        )}
 
-        {/* Индикатор прогресса только пока идёт выбор */}
-        {!hasFullSelection && (
-          <p className="muted small center">
-            Выбрано {selectedCount} / {maxCards}.{" "}
-            {remaining > 0 && `Осталось выбрать: ${remaining}.`}
-          </p>
+            <p className="muted small center">
+              Выбрано {selectedCount} / {maxCards}.{" "}
+              {remaining > 0 && `Осталось выбрать: ${remaining}.`}
+            </p>
+          </>
         )}
       </div>
     </div>
