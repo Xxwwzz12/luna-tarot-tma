@@ -524,3 +524,8 @@ button:disabled {
   box-shadow: 0 8px 18px rgba(148, 27, 178, 0.18);
   border-color: rgba(148, 27, 178, 0.25);
 }
+/* Перевёрнутая карта */
+.tarot-card-image-reversed {
+  transform: rotate(180deg);
+  transition: transform 0.25s ease;
+}

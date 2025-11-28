@@ -1,6 +1,8 @@
+# src/tma_api/spreads/models.py
+
 from __future__ import annotations
 
-from typing import Any, Dict, Literal
+from typing import Dict, Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,27 +22,45 @@ class SpreadListItem(BaseModel):
     created_at: str  # ISO date string
     short_preview: str | None = None
     has_questions: bool = False
-    interpretation: str | None = None  # 👈 Добавлено по ТЗ
+    interpretation: str | None = None
 
 
 class SpreadDetail(BaseModel):
     id: int
     spread_type: str
-    category: str
-    created_at: str
+    category: str | None
+    question: str | None  # первичный вопрос пользователя, если был
     cards: list[CardModel]
     interpretation: str | None = None
-    question: str | None = None
+    created_at: str
+    # опционально: вопросы по уже готовому раскладу
     questions: list["SpreadQuestionModel"] | None = None
 
 
 # 2. Модель создания расклада (POST /spreads)
 
 class SpreadCreateIn(BaseModel):
-    spread_type: str
-    category: str
-    question: str | None = None
+    """
+    Входная модель для POST /spreads.
+
+    mode:
+      - "auto" — сразу генерируем расклад и интерпретацию;
+      - "interactive" — интерактивный выбор карт.
+
+    spread_type:
+      - "one"   — 1 карта;
+      - "three" — 3 карты.
+
+    category:
+      - категория для 3-картного авто-расклада (если нет собственного вопроса).
+
+    question:
+      - вопрос ДО расклада, вместо категории, только для 3-картного расклада.
+    """
     mode: Literal["auto", "interactive"]
+    spread_type: Literal["one", "three"]
+    category: str | None = None
+    question: str | None = None  # вопрос до расклада, вместо категории (только для 3-карт)
 
 
 # 3. Модели интерактивного режима (mode="interactive")
@@ -63,13 +83,11 @@ class SpreadSelectCardIn(BaseModel):
 
 # 5. Модели вопросов
 
-class SpreadQuestionCreate(BaseModel):
+class SpreadQuestionIn(BaseModel):
     """
-    Входная модель для POST /spreads/{spread_id}/questions.
-    Роутер использует либо question, либо text.
+    Вопрос по УЖЕ ГОТОВОМУ раскладу (POST /spreads/{spread_id}/questions).
     """
-    question: str = Field(..., min_length=1)
-    text: str | None = None
+    question: str
 
 
 class SpreadQuestionModel(BaseModel):
@@ -80,7 +98,6 @@ class SpreadQuestionModel(BaseModel):
     answer: str | None
     status: Literal["pending", "ready", "failed"]
     created_at: str
-    answered_at: str | None = None
 
 
 # 6. Модель списка вопросов

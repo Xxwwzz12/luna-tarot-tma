@@ -22,9 +22,36 @@ function makeSnippet(text, maxLength = 140) {
   return trimmed.slice(0, maxLength).trimEnd() + "…";
 }
 
+function getSpreadTitle(spreadType) {
+  switch (spreadType) {
+    case "one":
+      return "Карта дня";
+    case "three":
+      return "Прошлое / Настоящее / Будущее";
+    default:
+      return "Таро расклад";
+  }
+}
+
+function getPreviewText(spread) {
+  const { short_preview, interpretation } = spread || {};
+
+  if (short_preview && short_preview.trim()) {
+    return short_preview.trim();
+  }
+
+  if (interpretation && interpretation.trim()) {
+    return makeSnippet(interpretation, 140);
+  }
+
+  return "Интерпретация пока отсутствует.";
+}
+
 export default function HistoryScreen({ spreads = [], onSelectSpread }) {
   const handleClick = (id) => {
-    if (onSelectSpread) onSelectSpread(id);
+    if (onSelectSpread) {
+      onSelectSpread(id);
+    }
   };
 
   if (!spreads.length) {
@@ -40,7 +67,7 @@ export default function HistoryScreen({ spreads = [], onSelectSpread }) {
 
   return (
     <div className="page page-history">
-      <h2>История раскладов</h2>
+      <h2 className="section-title">История раскладов</h2>
 
       <ul className="history-list">
         {spreads.map((spread) => (
@@ -53,19 +80,23 @@ export default function HistoryScreen({ spreads = [], onSelectSpread }) {
           >
             <div className="history-header">
               <span className="history-title">
-                #{spread.id} • {spread.spread_type} • {spread.category}
+                {getSpreadTitle(spread.spread_type)}
               </span>
-
               <span className="history-date">
                 {formatDate(spread.created_at)}
               </span>
             </div>
 
-            {spread.interpretation && (
-              <p className="history-snippet">
-                {makeSnippet(spread.interpretation)}
-              </p>
-            )}
+            <p
+              className={
+                "history-snippet" +
+                (!spread.short_preview && !spread.interpretation
+                  ? " muted"
+                  : "")
+              }
+            >
+              {getPreviewText(spread)}
+            </p>
           </li>
         ))}
       </ul>

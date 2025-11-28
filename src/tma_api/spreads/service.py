@@ -1,6 +1,8 @@
-from __future__ import annotations  # MUST be the first line
+from __future__ import annotations  # должна быть первой строкой
 
 import logging
+import os
+import random
 from dataclasses import dataclass
 from datetime import datetime, date
 from typing import Any, Dict, List, Optional, Tuple
@@ -13,10 +15,11 @@ from .models import (
     SpreadQuestionModel,
     SpreadQuestionsList,
 )
+from ..tarot_deck import draw_random_cards  # ✅ реальная колода
 
 logger = logging.getLogger(__name__)
 
-# 🔧 In-memory storage
+# 🔧 In-memory storage (используются InMemorySpreadRepository)
 _SPREADS: Dict[int, Dict[str, Any]] = {}
 _SPREAD_COUNTER = 1
 
@@ -38,23 +41,46 @@ def _now_iso() -> str:
 
 
 def _spread_has_questions(s: Dict[str, Any]) -> bool:
-    """Флаг has_questions."""
-    if s.get("question") and str(s["question"]).strip():
+    """Флаг has_questions для списка/деталей раскладов."""
+    if s.get("user_question") and str(s["user_question"]).strip():
         return True
     return len(_QUESTIONS.get((s["user_id"], s["id"]), [])) > 0
 
 
-def _build_cards(spread_type: str) -> List[CardModel]:
-    """Простая заглушка выбора карт."""
-    total = 1 if spread_type == "single" else 3
-    return [
-        CardModel(
-            position=i,
-            name=f"Карта {i}",
-            is_reversed=(i % 2 == 0),
-        )
-        for i in range(1, total + 1)
+def _build_cards(spread_type: str) -> List[Dict[str, Any]]:
+    """
+    B.2 — Использование реальной колоды через draw_random_cards.
+
+    Возвращаем список словарей карточек (payload), без Pydantic-моделей:
+    [
+      {
+        "id": ...,
+        "code": ...,
+        "name": ...,
+        "suit": ...,
+        "arcana": ...,
+        "image_url": ...,
+        "is_reversed": bool,
+      }, ...
     ]
+    """
+    count = 1 if spread_type == "one" else 3
+    raw_cards = draw_random_cards(count)
+
+    result: List[Dict[str, Any]] = []
+    for rc in raw_cards:
+        result.append(
+            {
+                "id": rc.get("id"),
+                "code": rc.get("code"),
+                "name": rc.get("name"),
+                "suit": rc.get("suit"),
+                "arcana": rc.get("arcana"),
+                "image_url": rc.get("image_url"),
+                "is_reversed": bool(random.getrandbits(1)),
+            }
+        )
+    return result
 
 
 def _get_ai_interpreter() -> Any | None:
@@ -65,6 +91,7 @@ def _get_ai_interpreter() -> Any | None:
 
     try:
         from ...ai_interpreter import AIInterpreter  # type: ignore
+
         _ai_interpreter = AIInterpreter()
     except Exception as e:
         logger.warning("AIInterpreter unavailable for TMA: %s", e)
@@ -111,6 +138,7 @@ def _get_user_ctx(user_id: int) -> UserContext:
 
     try:
         from ...profile_service import ProfileService  # type: ignore
+
         profile = ProfileService().get_profile(user_id=user_id)
     except Exception:
         profile = None
@@ -118,6 +146,7 @@ def _get_user_ctx(user_id: int) -> UserContext:
     if profile is None:
         try:
             from ...user_database import get_user_by_id  # type: ignore
+
             profile = get_user_by_id(user_id)
         except Exception:
             profile = None
@@ -131,7 +160,9 @@ def _get_user_ctx(user_id: int) -> UserContext:
         gender = profile.get("gender")
         birth = profile.get("birth_date")
     elif profile:
-        name = getattr(profile, "username", None) or getattr(profile, "first_name", None)
+        name = getattr(profile, "username", None) or getattr(
+            profile, "first_name", None
+        )
         gender = getattr(profile, "gender", None)
         birth = getattr(profile, "birth_date", None)
 
@@ -143,13 +174,86 @@ def _get_user_ctx(user_id: int) -> UserContext:
     )
 
 
+def _generate_basic_interpretation(
+    spread_type: str,
+    category: Optional[str],
+    user_question: Optional[str],
+) -> str:
+    """
+    A.4 — базовый fallback, если AI совсем ничего не дал.
+    """
+    cat = category or "general"
+    if user_question:
+        return (
+            f"Интерпретация расклада ({spread_type}/{cat}) "
+            f"с учётом вопроса: {user_question}"
+        )
+    return f"Интерпретация расклада ({spread_type}/{cat})."
+
+
+# ─────────────────────────────────────
+# Repositories: in-memory & SQLite stub
+# ─────────────────────────────────────
+
+class InMemorySpreadRepository:
+    """
+    In-memory реализация на основе модульных словарей _SPREADS / _QUESTIONS.
+    """
+
+    def save_spread(self, record: Dict[str, Any]) -> None:
+        _SPREADS[record["id"]] = record
+
+    def list_spreads(self, user_id: int) -> List[Dict[str, Any]]:
+        return [s for s in _SPREADS.values() if s["user_id"] == user_id]
+
+    def get_spread(self, user_id: int, spread_id: int) -> Optional[Dict[str, Any]]:
+        s = _SPREADS.get(spread_id)
+        if not s or s["user_id"] != user_id:
+            return None
+        return s
+
+    def save_question(self, record: Dict[str, Any]) -> None:
+        key = (record["user_id"], record["spread_id"])
+        _QUESTIONS.setdefault(key, []).append(record)
+        _QUESTION_INDEX[record["id"]] = record
+
+    def list_questions(self, user_id: int, spread_id: int) -> List[Dict[str, Any]]:
+        return _QUESTIONS.get((user_id, spread_id), [])
+
+
+class SQLiteSpreadRepository:
+    """
+    Заглушка под будущую реализацию через SQLite.
+    Сейчас создаётся только если TMA_USE_SQLITE=1,
+    но методы пока не реализованы.
+    """
+
+    def __init__(self, get_connection):
+        self._get_connection = get_connection
+
+    def save_spread(self, record: Dict[str, Any]) -> None:
+        raise NotImplementedError("SQLiteSpreadRepository.save_spread is not implemented yet")
+
+    def list_spreads(self, user_id: int) -> List[Dict[str, Any]]:
+        raise NotImplementedError("SQLiteSpreadRepository.list_spreads is not implemented yet")
+
+    def get_spread(self, user_id: int, spread_id: int) -> Optional[Dict[str, Any]]:
+        raise NotImplementedError("SQLiteSpreadRepository.get_spread is not implemented yet")
+
+    def save_question(self, record: Dict[str, Any]) -> None:
+        raise NotImplementedError("SQLiteSpreadRepository.save_question is not implemented yet")
+
+    def list_questions(self, user_id: int, spread_id: int) -> List[Dict[str, Any]]:
+        raise NotImplementedError("SQLiteSpreadRepository.list_questions is not implemented yet")
+
+
 # ─────────────────────────────────────
 # AI wrappers
 # ─────────────────────────────────────
 
 async def _generate_ai_interpretation(
     spread_type: str,
-    category: str,
+    category: Optional[str],
     cards_payload: List[Dict[str, Any]],
     question: Optional[str],
     user_ctx: UserContext,
@@ -172,7 +276,7 @@ async def _generate_ai_interpretation(
         if not result or not result.get("success") or not result.get("text"):
             logger.warning("AI interpretation failed: empty")
             return None
-        return result["text"].strip()
+        return str(result["text"]).strip()
     except Exception as e:
         logger.warning("AI interpretation exception: %s", e)
         return None
@@ -200,7 +304,7 @@ async def _generate_ai_answer(
         if not result or not result.get("success") or not result.get("text"):
             logger.warning("AI answer failed: empty")
             return None
-        return result["text"].strip()
+        return str(result["text"]).strip()
     except Exception as e:
         logger.warning("AI answer exception: %s", e)
         return None
@@ -211,73 +315,132 @@ async def _generate_ai_answer(
 # ─────────────────────────────────────
 
 class SpreadService:
-    def __init__(self):
-        pass
+    def __init__(self, repo: Any | None = None):
+        """
+        C.3 — Переключатель in-memory → SQLite через репозиторий.
+
+        Приоритет:
+        - если явно передан repo — используем его;
+        - иначе смотрим TMA_USE_SQLITE:
+          - "1" → пытаемся создать SQLiteSpreadRepository(get_connection);
+          - иначе → InMemorySpreadRepository().
+        """
+        if repo is not None:
+            self._repo = repo
+        else:
+            use_sqlite = os.getenv("TMA_USE_SQLITE", "0") == "1"
+            if use_sqlite:
+                try:
+                    from src.user_database import get_connection  # type: ignore
+
+                    self._repo = SQLiteSpreadRepository(get_connection)
+                    logger.info("SpreadService: using SQLiteSpreadRepository")
+                except Exception:
+                    logger.warning(
+                        "Failed to init SQLiteSpreadRepository, falling back to InMemorySpreadRepository",
+                        exc_info=True,
+                    )
+                    self._repo = InMemorySpreadRepository()
+            else:
+                self._repo = InMemorySpreadRepository()
+                logger.info("SpreadService: using InMemorySpreadRepository")
 
     # AUTO-расклад
     async def create_auto_spread(
         self,
         user_id: int,
         spread_type: str,
-        category: str,
-        question: Optional[str] = None,
+        category: str | None = None,
+        question: str | None = None,
     ) -> SpreadDetail:
+        """
+        Создать авто-расклад, вызвать AI и сохранить интерпретацию через self._repo.
 
+        - question здесь — «вопрос до расклада» (user_question);
+        - для spread_type == "one" считаем это картой дня:
+          category="daily", user_question=None.
+        """
         global _SPREAD_COUNTER
         spread_id = _SPREAD_COUNTER
         _SPREAD_COUNTER += 1
 
-        cards = _build_cards(spread_type)
-        cards_payload = [{"name": c.name, "is_reversed": c.is_reversed} for c in cards]
         user_ctx = _get_user_ctx(user_id)
 
+        # «Вопрос до расклада»
+        user_question = question
+        normalized_category = category
+
+        # Логика "Карты дня" — one → daily, без вопроса
+        if spread_type == "one":
+            normalized_category = "daily"
+            user_question = None
+
+        # B.2 — берём реальные карты из колоды (payload)
+        cards_payload = _build_cards(spread_type)
+
+        # Пытаемся получить интерпретацию через AI
         try:
             interpretation = await _generate_ai_interpretation(
                 spread_type=spread_type,
-                category=category,
+                category=normalized_category,
                 cards_payload=cards_payload,
-                question=question,
+                question=user_question,
                 user_ctx=user_ctx,
             )
         except Exception:
             interpretation = None
 
-        if not interpretation:
-            if question:
-                interpretation = (
-                    f"Интерпретация расклада ({spread_type}/{category}) "
-                    f"с вопросом: {question}"
-                )
-            else:
-                interpretation = f"Интерпретация расклада ({spread_type}/{category})."
+        # A.4 — гарантированный fallback + нормализация
+        if not interpretation or not interpretation.strip():
+            interpretation = _generate_basic_interpretation(
+                spread_type=spread_type,
+                category=normalized_category,
+                user_question=user_question,
+            )
+        interpretation = interpretation.strip()
 
         created_at = _now_iso()
+        effective_category = normalized_category or "general"
 
-        _SPREADS[spread_id] = {
+        # A.5 — чёткая структура записи
+        record: Dict[str, Any] = {
             "id": spread_id,
             "user_id": user_id,
             "spread_type": spread_type,
-            "category": category,
-            "created_at": created_at,
-            "cards": cards,
+            "category": effective_category,   # daily/general
+            "user_question": user_question,   # вопрос ДО расклада
+            "cards": cards_payload,           # raw-пэйлоад колоды
             "interpretation": interpretation,
-            "question": question,
+            "created_at": created_at,
         }
+
+        # C.3 — сохраняем через репозиторий
+        self._repo.save_spread(record)
+
+        # Для ответа API собираем CardModel (минимальный вид)
+        cards_models = [
+            CardModel(
+                position=i + 1,
+                name=c.get("name") or "",
+                is_reversed=bool(c.get("is_reversed")),
+            )
+            for i, c in enumerate(cards_payload)
+        ]
 
         return SpreadDetail(
             id=spread_id,
             spread_type=spread_type,
-            category=category,
+            category=effective_category,
             created_at=created_at,
-            cards=cards,
+            cards=cards_models,
             interpretation=interpretation,
-            question=question,
+            question=user_question,
         )
 
-    # Интерактивные сессии — как было
+    # Интерактивные сессии — остаются in-memory
     def create_interactive_session(self, user_id: int, spread_type: str, category: str):
         session_id = str(uuid4())
-        total = 1 if spread_type == "single" else 3
+        total = 1 if spread_type == "one" else 3
 
         session = {
             "session_id": session_id,
@@ -349,8 +512,11 @@ class SpreadService:
         page: int = 1,
         limit: int = 10,
     ) -> Dict[str, Any]:
-
-        spreads = [s for s in _SPREADS.values() if s["user_id"] == user_id]
+        """
+        C.3 — теперь берём список через repo.list_spreads(user_id),
+        а пагинацию/модели строим в сервисе.
+        """
+        spreads = self._repo.list_spreads(user_id)
         spreads.sort(key=lambda s: s["created_at"], reverse=True)
 
         total = len(spreads)
@@ -371,11 +537,19 @@ class SpreadService:
                 interpretation[:140].rstrip() if interpretation else None
             )
 
+            # Категория в списке:
+            # - one → daily
+            # - иначе — сохранённая или general
+            if s.get("spread_type") == "one":
+                item_category = "daily"
+            else:
+                item_category = s.get("category") or "general"
+
             items.append(
                 SpreadListItem(
                     id=s["id"],
                     spread_type=s["spread_type"],
-                    category=s.get("category") or "general",
+                    category=item_category,
                     created_at=s["created_at"],
                     short_preview=short_preview,
                     has_questions=_spread_has_questions(s),
@@ -396,17 +570,31 @@ class SpreadService:
 
     # Детальный расклад
     def get_spread(self, user_id: int, spread_id: int):
-        s = _SPREADS.get(spread_id)
-        if not s or s["user_id"] != user_id:
+        """
+        C.3 — теперь через repo.get_spread(user_id, spread_id).
+        """
+        s = self._repo.get_spread(user_id, spread_id)
+        if not s:
             return None
+
+        cards_payload = s.get("cards") or []
+        cards_models = [
+            CardModel(
+                position=i + 1,
+                name=c.get("name") or "",
+                is_reversed=bool(c.get("is_reversed")),
+            )
+            for i, c in enumerate(cards_payload)
+        ]
+
         return SpreadDetail(
             id=s["id"],
             spread_type=s["spread_type"],
-            category=s["category"],
+            category=s.get("category") or "general",
             created_at=s["created_at"],
-            cards=s["cards"],
-            interpretation=s["interpretation"],
-            question=s.get("question"),
+            cards=cards_models,
+            interpretation=s.get("interpretation"),
+            question=s.get("user_question"),
         )
 
     # Вопросы
@@ -416,11 +604,15 @@ class SpreadService:
         spread_id: int,
         question: str,
     ) -> SpreadQuestionModel:
-
+        """
+        Вопрос к УЖЕ существующему раскладу.
+        A.6 — question здесь НЕ вопрос до расклада, а уточнение к нему.
+        user_question в _SPREADS / БД не трогаем.
+        """
         global _QUESTION_COUNTER
 
-        spread = _SPREADS.get(spread_id)
-        if not spread or spread["user_id"] != user_id:
+        spread = self._repo.get_spread(user_id, spread_id)
+        if not spread:
             raise ValueError("Spread not found")
 
         user_ctx = _get_user_ctx(user_id)
@@ -445,23 +637,26 @@ class SpreadService:
             "user_id": user_id,
             "question": question,
             "answer": answer,
-            "status": "ready",
+            "status": "ready",  # TODO: pipeline pending → AI → ready/failed
             "created_at": _now_iso(),
         }
 
-        key = (user_id, spread_id)
-        _QUESTIONS.setdefault(key, []).append(record)
-        _QUESTION_INDEX[qid] = record
+        # C.3 — сохраняем через репозиторий
+        self._repo.save_question(record)
 
         return SpreadQuestionModel(**record)
 
     def get_spread_questions(self, user_id: int, spread_id: int):
-        spread = _SPREADS.get(spread_id)
-        if not spread or spread["user_id"] != user_id:
+        """
+        C.3 — список вопросов по раскладу через repo.list_questions(...)
+        """
+        # убедимся, что расклад существует и принадлежит пользователю
+        spread = self._repo.get_spread(user_id, spread_id)
+        if not spread:
             raise ValueError("Spread not found")
 
         lst = sorted(
-            _QUESTIONS.get((user_id, spread_id), []),
+            self._repo.list_questions(user_id, spread_id),
             key=lambda x: x["created_at"],
         )
         return SpreadQuestionsList(items=[SpreadQuestionModel(**q) for q in lst])

@@ -99,7 +99,11 @@ function App() {
         setProfile(profileData);
 
         if (spreadsData && Array.isArray(spreadsData.items)) {
-          setSpreads({ items: spreadsData.items });
+          // если бек вернёт ещё total_items и т.п., их можно сохранить
+          setSpreads({
+            items: spreadsData.items,
+            total_items: spreadsData.total_items,
+          });
         }
       } catch (e) {
         setError(e.message || "Ошибка загрузки");
@@ -160,40 +164,53 @@ function App() {
         // selected_cards: selectedCards, // можно добавить позже, когда бек будет готов
       };
 
-      const spread = await createAutoSpread(payload);
+      const detail = await createAutoSpread(payload);
 
-      const spreadWithQuestion = {
-        ...spread,
+      const detailWithQuestion = {
+        ...detail,
         question: payload.question || null,
       };
 
-      setCurrentSpread(spreadWithQuestion);
+      // Сохраняем детальный расклад и переходим на вкладку "Расклады"
+      setCurrentSpread(detailWithQuestion);
+      setActiveTab("spreads");
 
+      // Обновляем историю (вариант 1 из ТЗ A.1)
       setSpreads((prev) => {
-        const items = prev?.items ?? [];
+        if (!prev || !Array.isArray(prev.items)) return prev;
+
         const newItem = {
-          id: spread.id,
-          spread_type: spread.spread_type,
-          category: spread.category,
-          created_at: spread.created_at,
-          short_preview:
-            spread.interpretation ||
-            "Интерпретация ещё генерируется или не задана",
-          has_questions: !!payload.question,
+          id: detail.id,
+          spread_type: detail.spread_type,
+          category: detail.category || "general",
+          created_at: detail.created_at,
+          short_preview: detail.interpretation
+            ? detail.interpretation.slice(0, 140).trim()
+            : null,
+          has_questions: false,
+          interpretation: detail.interpretation || null,
         };
-        return { ...prev, items: [newItem, ...items] };
+
+        const prevItems = prev.items || [];
+        const prevTotal =
+          typeof prev.total_items === "number"
+            ? prev.total_items
+            : prevItems.length;
+
+        return {
+          ...prev,
+          items: [newItem, ...prevItems],
+          total_items: prevTotal + 1,
+        };
       });
 
-      // подгружаем вопросы
-      await loadQuestionsForSpread(spread.id);
+      // подгружаем вопросы уже по созданному раскладу
+      await loadQuestionsForSpread(detail.id);
 
       // сброс вопроса и выбранных карт после успешного создания
       setQuestion("");
       setSelectedCards([]);
       setNewQuestion("");
-
-      // переход на экран раскладов
-      setActiveTab("spreads");
     } catch (err) {
       setError(err.message || "Не удалось создать расклад");
     } finally {
@@ -255,6 +272,7 @@ function App() {
     const found = spreads.items.find((s) => s.id === id);
     if (!found) return;
 
+    // found — это элемент списка, не обязательно полный detail, но для просмотра хватит
     setCurrentSpread(found);
     setActiveTab("spreads");
   }

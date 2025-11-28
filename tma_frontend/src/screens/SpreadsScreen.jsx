@@ -27,32 +27,56 @@ function SpreadsScreen({
   onSpreadTypeChange,
   category,
   onCategoryChange,
-  question,
+  question,          // это userQuestion из ТЗ
   onQuestionChange,
   selectedCards,
   onSelectCard,
-  onCreateSpread,
+  onCreateSpread,    // теперь получит payload
   currentSpread,
 }) {
-  // 👇 ТЗ: maxCards зависит от spreadType
+  // maxCards строго по ТЗ: 1 для "one", 3 для "three"
   const maxCards = spreadType === "one" ? 1 : 3;
+  const selectedCount = Array.isArray(selectedCards) ? selectedCards.length : 0;
 
-  const selectedCount = selectedCards?.length || 0;
-
-  // 🔐 Логика блокировки кнопки (оставляем как по ТЗ)
+  // дизейбл кнопки — та же логика, что в ТЗ
+  const trimmedQuestion = (question || "").trim();
   const isCreateDisabled =
     !spreadType ||
     selectedCount === 0 ||
-    (spreadType === "three" &&
-      !category &&
-      !(question && question.trim().length > 0));
+    (spreadType === "three" && !category && !trimmedQuestion);
 
   const handleCreateSpreadClick = () => {
     if (isCreateDisabled) return;
-    onCreateSpread?.();
+
+    let payloadCategory: string | null = null;
+    let payloadQuestion: string | null = null;
+
+    if (spreadType === "one") {
+      // ТЗ: для карты дня не используем ни категорию, ни вопрос
+      payloadCategory = null;
+      payloadQuestion = null;
+    } else if (spreadType === "three") {
+      // ТЗ: приоритизируем категорию, иначе используем trimmed userQuestion
+      if (category) {
+        payloadCategory = category;
+        payloadQuestion = null;
+      } else if (trimmedQuestion) {
+        payloadCategory = null;
+        payloadQuestion = trimmedQuestion;
+      }
+    }
+
+    const payload = {
+      mode: "auto",
+      spread_type: spreadType,
+      category: payloadCategory,
+      question: payloadQuestion,
+    };
+
+    // родитель уже дергает createSpread/apiPost
+    onCreateSpread?.(payload);
   };
 
-  // ─── Вывод списка карт ──────────────────────────────────────────────
   const renderCardsSummary = () => {
     const cards = currentSpread?.cards;
     if (!cards || !Array.isArray(cards) || cards.length === 0) {
@@ -62,8 +86,8 @@ function SpreadsScreen({
     const text = cards
       .map((card, idx) => {
         const name = card?.name || card?.title || `Карта ${idx + 1}`;
-        const rev = card?.is_reversed || card?.reversed;
-        return `${name}${rev ? " (перевернутая)" : ""}`;
+        const isReversed = card?.is_reversed || card?.reversed;
+        return `${name}${isReversed ? " (перевернутая)" : ""}`;
       })
       .join(" / ");
 
@@ -72,15 +96,13 @@ function SpreadsScreen({
 
   return (
     <div className="page page-spreads">
-
-      {/* ─────────────────────────────────────────────────────────────── */}
       {/* Тип расклада */}
-      {/* ─────────────────────────────────────────────────────────────── */}
       <section className="card card-spread-type">
         <h2>Тип расклада</h2>
 
         <div className="pill-toggle">
           <button
+            type="button"
             className={
               spreadType === "one" ? "pill-option active" : "pill-option"
             }
@@ -91,6 +113,7 @@ function SpreadsScreen({
           </button>
 
           <button
+            type="button"
             className={
               spreadType === "three" ? "pill-option active" : "pill-option"
             }
@@ -102,16 +125,13 @@ function SpreadsScreen({
         </div>
       </section>
 
-      {/* ─────────────────────────────────────────────────────────────── */}
       {/* Тема / вопрос */}
-      {/* ─────────────────────────────────────────────────────────────── */}
       <section className="card card-topic">
         <h2>Тема / вопрос</h2>
 
         {spreadType === "one" && (
           <p className="muted">
-            Для карты дня тема задаётся автоматически: «Что ждёт меня
-            сегодня?»
+            Для карты дня тема задаётся автоматически: «Что ждёт меня сегодня?»
           </p>
         )}
 
@@ -133,35 +153,29 @@ function SpreadsScreen({
             </div>
 
             <div className="field">
-              <label className="field-label" htmlFor="spread-question">
-                Ваш вопрос (опционально)
+              <label htmlFor="spread-question" className="field-label">
+                Ваш вопрос (опционально, можно выбрать только тему)
               </label>
-
               <textarea
                 id="spread-question"
                 className="textarea"
                 rows={3}
                 value={question || ""}
                 onChange={(e) => onQuestionChange?.(e.target.value)}
-                placeholder="Например: «Что ждёт меня в ближайшие полгода?»"
+                placeholder="Например: «Что ждёт меня в ближайшие полгода в работе?»"
               />
             </div>
           </>
         )}
       </section>
 
-      {/* ─────────────────────────────────────────────────────────────── */}
       {/* Выбор карт */}
-      {/* ─────────────────────────────────────────────────────────────── */}
       <section className="card card-cards">
         <h2>Выбор карт</h2>
-
         <p className="muted">
-          Выберите {maxCards === 1 ? "одну карту" : "несколько карт"} в
-          колоде.
+          Выберите {maxCards === 1 ? "одну карту" : "несколько карт"} в колоде.
         </p>
 
-        {/* СЮДА — обновлённый вызов карусели по ТЗ */}
         <TarotCarousel
           selectedCount={selectedCount}
           maxCards={maxCards}
@@ -173,28 +187,23 @@ function SpreadsScreen({
         </p>
       </section>
 
-      {/* ─────────────────────────────────────────────────────────────── */}
       {/* Кнопка создания расклада */}
-      {/* ─────────────────────────────────────────────────────────────── */}
       <section className="card card-actions">
         <button
+          type="button"
           className="btn-primary"
-          disabled={isCreateDisabled}
           onClick={handleCreateSpreadClick}
+          disabled={isCreateDisabled}
         >
           Сделать расклад
         </button>
-
-        {/* 🔎 Новая подсказка по ТЗ */}
         <p className="muted small">
           Сначала выберите {maxCards === 1 ? "карту" : "несколько карт"} через
           карусель и при необходимости задайте вопрос.
         </p>
       </section>
 
-      {/* ─────────────────────────────────────────────────────────────── */}
-      {/* Текущий расклад (с бейджем «из истории») */}
-      {/* ─────────────────────────────────────────────────────────────── */}
+      {/* Текущий расклад */}
       <section className="card section spread-current">
         <div className="spread-current-header">
           <p className="section-title">Текущий расклад</p>
@@ -212,15 +221,14 @@ function SpreadsScreen({
                 <span className="muted small">ID</span>
                 <span>#{currentSpread.id}</span>
               </div>
-
               <div className="spread-meta-row">
                 <span className="muted small">Тип</span>
                 <span>
                   {SPREAD_TYPE_LABELS[currentSpread.spread_type] ||
-                    currentSpread.spread_type}
+                    currentSpread.spread_type ||
+                    "—"}
                 </span>
               </div>
-
               <div className="spread-meta-row">
                 <span className="muted small">Категория</span>
                 <span>
@@ -229,7 +237,6 @@ function SpreadsScreen({
                     : "—"}
                 </span>
               </div>
-
               {currentSpread.question && (
                 <div className="spread-meta-row">
                   <span className="muted small">Вопрос</span>

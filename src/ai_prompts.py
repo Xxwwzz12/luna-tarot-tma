@@ -149,8 +149,8 @@ def build_spread_interpretation_prompt(
     profile_context: str = "",
 ) -> str:
     """
-    Построение промпта для первичной интерпретации расклада
-    с учётом категории и (опционально) явного вопроса пользователя.
+    Построение промпта для первичной интерпретации расклада:
+    здесь question трактуется как ВОПРОС ПОЛЬЗОВАТЕЛЯ ПЕРЕД РАСКЛАДОМ.
     """
     spread_name = _get_spread_name(spread_type, cards)
     cards_text = _build_cards_text(spread_type, cards)
@@ -161,11 +161,14 @@ def build_spread_interpretation_prompt(
     if profile_context:
         profile_block = profile_context.strip() + "\n\n"
 
-    question_block = ""
     if question:
         q_clean = question.strip()
         if q_clean:
-            question_block = f'\nВопрос пользователя: "{q_clean}"\n'
+            question_block = f'\nВопрос пользователя перед раскладом: "{q_clean}"\n'
+        else:
+            question_block = ""
+    else:
+        question_block = ""
 
     # Подсказка ЛЛМ в зависимости от количества карт
     if len(cards) == 1:
@@ -212,7 +215,11 @@ def build_question_answer_prompt(
     profile_context: str = "",
 ) -> str:
     """
-    Построение промпта для ответа на дополнительный вопрос по уже сделанному раскладу.
+    Построение промпта для ответа на ДОПОЛНИТЕЛЬНЫЙ / УТОЧНЯЮЩИЙ вопрос пользователя
+    по уже сделанному раскладу.
+
+    ВАЖНО: параметр `question` здесь — это именно уточняющий вопрос по готовой
+    интерпретации, а НЕ исходный вопрос, который задаётся перед раскладом.
     """
     spread_name = _get_spread_name(spread_type, [])
 
@@ -226,10 +233,10 @@ def build_question_answer_prompt(
     cards_clean = (cards_text or "").strip() or "нет подробного описания карт"
 
     prompt_lines = [
-        "Ты — опытный таролог. Ответь на вопрос пользователя по предыдущему раскладу.",
+        "Ты — опытный таролог. Ответь на дополнительный уточняющий вопрос пользователя по уже сделанному раскладу.",
         "",
         profile_block.rstrip(),  # может быть пустым
-        f'Вопрос пользователя: "{question_clean}"',
+        f'Пользователь задал дополнительный вопрос по уже сделанному раскладу: "{question_clean}"',
         "",
         "Информация о раскладе:",
         f"- Тип: {spread_name}",
