@@ -7,109 +7,99 @@ import logging
 import random
 from functools import lru_cache
 from pathlib import Path
-from typing import TypedDict, NotRequired, Any, List
+from typing import TypedDict, NotRequired, Any
+from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 
 
-# --------------------------------------------
-# TypedDict под карту из JSON
-# --------------------------------------------
+# ---------------------------------------------------------
+# TypedDict под объект карты
+# ---------------------------------------------------------
 class TarotCard(TypedDict, total=False):
     id: NotRequired[int]
     name: NotRequired[str]
-    type: NotRequired[str]              # major / minor
+    type: NotRequired[str]              # major/minor
     suit: NotRequired[str]
     description: NotRequired[str]
     meaning_upright: NotRequired[str]
     meaning_reversed: NotRequired[str]
-    keywords: NotRequired[List[str]]
+    keywords: NotRequired[list[str]]
     image_url: NotRequired[str]
-    is_reversed: NotRequired[bool]      # Не обязателен в JSON
+    is_reversed: NotRequired[bool]
 
 
-# --------------------------------------------
+# ---------------------------------------------------------
 # Пути
-# --------------------------------------------
+# ---------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parents[2]
 DECK_PATH = BASE_DIR / "data" / "tarot_deck.json"
 
 
-# --------------------------------------------
-# Ленивый универсальный парсер структуры JSON
-# --------------------------------------------
+# ---------------------------------------------------------
+# Рекурсивный парсер объектов-карт (T1.3)
+# ---------------------------------------------------------
+def _iter_card_dicts(obj) -> Iterable[dict]:
+    """
+    Рекурсивно обходит структуру (dict/list)
+    и собирает все объекты, которые "похожи" на карту:
+      - есть "name"
+      - есть хотя бы один из: "image_url", "type", "id"
+    """
+    if isinstance(obj, dict):
+        # Похожа на карту? Считаем картой
+        if "name" in obj and ("image_url" in obj or "type" in obj or "id" in obj):
+            yield obj
+
+        # И продолжаем углубляться
+        for v in obj.values():
+            yield from _iter_card_dicts(v)
+
+    elif isinstance(obj, list):
+        for item in obj:
+            yield from _iter_card_dicts(item)
+
+    # Всё остальное (строки, числа и т.п.) игнорируем
+
+
+# ---------------------------------------------------------
+# Ленивая загрузка JSON с рекурсивным разбором (T1.3)
+# ---------------------------------------------------------
 @lru_cache
 def _load_deck() -> list[TarotCard]:
-    """
-    Загружает таро-колоду из JSON в одном из форматов:
-
-    Формат №1:
-        { "cards": [ {...}, ... ] }
-
-    Формат №2:
-        [ {...}, {...}, ... ]
-
-    Формат №3:
-        { "0": {...}, "1": {...}, "shut": {...}, ... }
-
-    Если структура неизвестна → ValueError.
-    """
-
     logger.info("Loading tarot deck from %s", DECK_PATH)
 
     with DECK_PATH.open("r", encoding="utf-8") as f:
         raw: Any = json.load(f)
 
-    cards: list[TarotCard]
-
-    # Формат №1
+    # Если есть ключ "cards" — работаем с ним, иначе со всем JSON
     if isinstance(raw, dict) and "cards" in raw:
-        if isinstance(raw["cards"], list):
-            cards = raw["cards"]  # type: ignore[assignment]
-        else:
-            raise ValueError("JSON key 'cards' exists but is not a list")
-
-    # Формат №2
-    elif isinstance(raw, list):
-        cards = raw  # type: ignore[assignment]
-
-    # Формат №3 (словарь без 'cards')
-    elif isinstance(raw, dict):
-        # Берём все значения
-        values = list(raw.values())
-        # Значения должны быть dict/карты
-        if not all(isinstance(v, dict) for v in values):
-            raise ValueError(
-                "Unsupported tarot deck JSON mapping: some values are not dicts"
-            )
-        cards = values  # type: ignore[assignment]
-
-    # Неподдерживаемый тип
+        root_obj = raw["cards"]
     else:
-        raise ValueError(f"Unsupported tarot deck JSON structure: {type(raw)}")
+        root_obj = raw
 
-    # Логирование результата
-    size = len(cards)
-    logger.info("Tarot deck loaded successfully (cards: %s)", size)
+    # Рекурсивно собираем все карточные dict
+    cards = [c for c in _iter_card_dicts(root_obj)]
 
-    if size < 3:
+    if not cards:
+        raise ValueError("No tarot card dicts found in tarot_deck.json")
+
+    if len(cards) < 3:
         logger.warning(
-            "Tarot deck contains only %s cards; some spreads may duplicate cards.",
-            size,
+            "Tarot deck contains only %s cards; spreads may have duplicates.",
+            len(cards),
         )
 
-    return cards
+    logger.info("Tarot deck loaded successfully (cards: %s)", len(cards))
+    return cards  # type: ignore[return-value]
 
 
-# --------------------------------------------
-# Устойчивый выбор карт
-# --------------------------------------------
+# ---------------------------------------------------------
+# Устойчивый выбор карт (T1.2, без изменений)
+# ---------------------------------------------------------
 def draw_random_cards(count: int) -> list[TarotCard]:
     """
-    Нормально работает при любой длине колоды:
-    - count <= 0 → []
-    - len(deck) >= count → random.sample
-    - len(deck) < count → предупреждение + random.choices (допускаются повторы)
+    Надёжное поведение для любой длины колоды.
     """
     if count <= 0:
         return []
@@ -124,7 +114,7 @@ def draw_random_cards(count: int) -> list[TarotCard]:
     if deck_size >= count:
         return random.sample(deck, k=count)
 
-    # Деградация: карт меньше, чем надо — выбираем с повторами
+    # Деградация: карт меньше, чем нужно → выбираем с повторами
     logger.warning(
         "Requested %s cards, but deck has only %s. "
         "Allowing duplicates via random.choices.",
