@@ -1,6 +1,4 @@
-ъ# src/tma_api/spreads/service.py
-
-from __future__ import annotations
+from __future__ import annotations  # MUST be the first line
 
 import logging
 from dataclasses import dataclass
@@ -19,7 +17,6 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 # 🔧 In-memory storage
-
 _SPREADS: Dict[int, Dict[str, Any]] = {}
 _SPREAD_COUNTER = 1
 
@@ -41,14 +38,14 @@ def _now_iso() -> str:
 
 
 def _spread_has_questions(s: Dict[str, Any]) -> bool:
-    """Флаг has_questions для списка раскладов."""
+    """Флаг has_questions."""
     if s.get("question") and str(s["question"]).strip():
         return True
     return len(_QUESTIONS.get((s["user_id"], s["id"]), [])) > 0
 
 
 def _build_cards(spread_type: str) -> List[CardModel]:
-    """Простая заглушка выбора карт для one/three."""
+    """Простая заглушка выбора карт."""
     total = 1 if spread_type == "single" else 3
     return [
         CardModel(
@@ -61,14 +58,13 @@ def _build_cards(spread_type: str) -> List[CardModel]:
 
 
 def _get_ai_interpreter() -> Any | None:
-    """Лениво инициализируем AIInterpreter (общий для TMA)."""
+    """Singleton AIInterpreter."""
     global _ai_interpreter
     if _ai_interpreter is not None:
         return _ai_interpreter
 
     try:
         from ...ai_interpreter import AIInterpreter  # type: ignore
-
         _ai_interpreter = AIInterpreter()
     except Exception as e:
         logger.warning("AIInterpreter unavailable for TMA: %s", e)
@@ -110,57 +106,45 @@ class UserContext:
 
 
 def _get_user_ctx(user_id: int) -> UserContext:
-    """Пытаемся получить профиль юзера из общих сервисов, мягко и без падений."""
+    """Пытаемся достать профиль мягко."""
     profile: Any = None
 
-    # Вариант 1: ProfileService
     try:
         from ...profile_service import ProfileService  # type: ignore
-
-        svc = ProfileService()
-        profile = svc.get_profile(user_id=user_id)
+        profile = ProfileService().get_profile(user_id=user_id)
     except Exception:
         profile = None
 
-    # Вариант 2: user_database
     if profile is None:
         try:
             from ...user_database import get_user_by_id  # type: ignore
-
             profile = get_user_by_id(user_id)
         except Exception:
             profile = None
 
-    name: Optional[str] = None
-    gender: Optional[str] = None
-    birth_date: Any = None
+    name = None
+    gender = None
+    birth = None
 
     if isinstance(profile, dict):
         name = profile.get("username") or profile.get("first_name")
         gender = profile.get("gender")
-        birth_date = profile.get("birth_date")
-    elif profile is not None:
-        try:
-            name = getattr(profile, "username", None) or getattr(
-                profile, "first_name", None
-            )
-            gender = getattr(profile, "gender", None)
-            birth_date = getattr(profile, "birth_date", None)
-        except Exception:
-            pass
-
-    age = _compute_age(birth_date)
+        birth = profile.get("birth_date")
+    elif profile:
+        name = getattr(profile, "username", None) or getattr(profile, "first_name", None)
+        gender = getattr(profile, "gender", None)
+        birth = getattr(profile, "birth_date", None)
 
     return UserContext(
         id=user_id,
         name=name,
-        age=age,
+        age=_compute_age(birth),
         gender=gender,
     )
 
 
 # ─────────────────────────────────────
-# AI wrappers (async)
+# AI wrappers
 # ─────────────────────────────────────
 
 async def _generate_ai_interpretation(
@@ -170,10 +154,7 @@ async def _generate_ai_interpretation(
     question: Optional[str],
     user_ctx: UserContext,
 ) -> Optional[str]:
-    """
-    Async-обёртка вокруг AIInterpreter.generate_interpretation.
-    Обязательно await при вызове интерпретатора.
-    """
+
     interpreter = _get_ai_interpreter()
     if not interpreter:
         return None
@@ -189,11 +170,11 @@ async def _generate_ai_interpretation(
             user_name=user_ctx.name,
         )
         if not result or not result.get("success") or not result.get("text"):
-            logger.warning("AI interpretation failed: empty/invalid result")
+            logger.warning("AI interpretation failed: empty")
             return None
-        return str(result["text"]).strip()
+        return result["text"].strip()
     except Exception as e:
-        logger.warning("AI interpretation failed, using fallback: %s", e)
+        logger.warning("AI interpretation exception: %s", e)
         return None
 
 
@@ -202,10 +183,7 @@ async def _generate_ai_answer(
     question: str,
     user_ctx: UserContext,
 ) -> Optional[str]:
-    """
-    Async-обёртка вокруг AIInterpreter.generate_question_answer.
-    Обязательно await при вызове интерпретатора.
-    """
+
     interpreter = _get_ai_interpreter()
     if not interpreter:
         return None
@@ -220,11 +198,11 @@ async def _generate_ai_answer(
             user_name=user_ctx.name,
         )
         if not result or not result.get("success") or not result.get("text"):
-            logger.warning("AI answer failed: empty/invalid result")
+            logger.warning("AI answer failed: empty")
             return None
-        return str(result["text"]).strip()
+        return result["text"].strip()
     except Exception as e:
-        logger.warning("AI answer failed, using fallback: %s", e)
+        logger.warning("AI answer exception: %s", e)
         return None
 
 
@@ -236,7 +214,7 @@ class SpreadService:
     def __init__(self):
         pass
 
-    # 1) AUTO-расклад с AI-интерпретацией
+    # AUTO-расклад
     async def create_auto_spread(
         self,
         user_id: int,
@@ -244,19 +222,15 @@ class SpreadService:
         category: str,
         question: Optional[str] = None,
     ) -> SpreadDetail:
-        """
-        Создать авто-расклад, вызвать AI и сохранить интерпретацию в _SPREADS.
-        """
+
         global _SPREAD_COUNTER
         spread_id = _SPREAD_COUNTER
         _SPREAD_COUNTER += 1
 
         cards = _build_cards(spread_type)
         cards_payload = [{"name": c.name, "is_reversed": c.is_reversed} for c in cards]
-
         user_ctx = _get_user_ctx(user_id)
 
-        # Пытаемся получить интерпретацию через AI
         try:
             interpretation = await _generate_ai_interpretation(
                 spread_type=spread_type,
@@ -268,19 +242,18 @@ class SpreadService:
         except Exception:
             interpretation = None
 
-        # Fallback, если AI совсем ничего не дал
         if not interpretation:
             if question:
                 interpretation = (
                     f"Интерпретация расклада ({spread_type}/{category}) "
-                    f"с учётом вопроса: {question}"
+                    f"с вопросом: {question}"
                 )
             else:
                 interpretation = f"Интерпретация расклада ({spread_type}/{category})."
 
         created_at = _now_iso()
 
-        db_spread: Dict[str, Any] = {
+        _SPREADS[spread_id] = {
             "id": spread_id,
             "user_id": user_id,
             "spread_type": spread_type,
@@ -290,10 +263,7 @@ class SpreadService:
             "interpretation": interpretation,
             "question": question,
         }
-        # 🔴 ВАЖНО: интерпретация сохраняется в _SPREADS
-        _SPREADS[spread_id] = db_spread
 
-        # Возвращаем деталь с тем же текстом, который уйдёт в историю
         return SpreadDetail(
             id=spread_id,
             spread_type=spread_type,
@@ -304,13 +274,8 @@ class SpreadService:
             question=question,
         )
 
-    # 2) Интерактивные сессии (оставляем как есть, sync)
-    def create_interactive_session(
-        self,
-        user_id: int,
-        spread_type: str,
-        category: str,
-    ) -> Dict[str, Any]:
+    # Интерактивные сессии — как было
+    def create_interactive_session(self, user_id: int, spread_type: str, category: str):
         session_id = str(uuid4())
         total = 1 if spread_type == "single" else 3
 
@@ -327,12 +292,7 @@ class SpreadService:
         _SESSIONS[session_id] = session
         return session
 
-    def select_card(
-        self,
-        session_id: str,
-        position: int,
-        choice_index: int,
-    ) -> Optional[Dict[str, Any]]:
+    def select_card(self, session_id: str, pos: int, choice: int):
         session = _SESSIONS.get(session_id)
         if not session:
             return None
@@ -341,20 +301,19 @@ class SpreadService:
             return None
 
         total = session["total_positions"]
-        if not (1 <= position <= total):
+        if not (1 <= pos <= total):
             return None
 
-        session["selected_cards"][position] = {
-            "position": position,
-            "name": f"Карта {choice_index}",
-            "is_reversed": (choice_index % 2 == 0),
+        session["selected_cards"][pos] = {
+            "position": pos,
+            "name": f"Карта {choice}",
+            "is_reversed": (choice % 2 == 0),
         }
 
         if len(session["selected_cards"]) < total:
-            session["current_position"] = position + 1
+            session["current_position"] = pos + 1
             return session
 
-        # Все карты выбраны, завершаем сессию
         session["status"] = "completed"
 
         cards = [
@@ -367,122 +326,97 @@ class SpreadService:
         ]
 
         interpretation = (
-            f"Интерпретация интерактивного расклада: "
-            f"{session['spread_type']}/{session['category']}"
-        )
-
-        spread_detail = SpreadDetail(
-            id=-1,
-            spread_type=session["spread_type"],
-            category=session["category"],
-            created_at=_now_iso(),
-            cards=cards,
-            interpretation=interpretation,
-            question=None,
+            f"Интерактивный расклад: {session['spread_type']}/{session['category']}"
         )
 
         return {
             "session": session,
-            "spread": spread_detail,
+            "spread": SpreadDetail(
+                id=-1,
+                spread_type=session["spread_type"],
+                category=session["category"],
+                created_at=_now_iso(),
+                cards=cards,
+                interpretation=interpretation,
+                question=None,
+            ),
         }
 
-    # 3) Список раскладов (основной метод)
+    # Список раскладов
     def get_spreads(
         self,
         user_id: int,
         page: int = 1,
         limit: int = 10,
     ) -> Dict[str, Any]:
-        """
-        Основная функция списка раскладов:
-        - фильтр по user_id
-        - сортировка по created_at desc
-        - пагинация
-        - short_preview из interpretation
-        - has_questions через _spread_has_questions
-        - ДОПОЛНИТЕЛЬНО: пробрасываем interpretation в SpreadListItem
-        """
+
         spreads = [s for s in _SPREADS.values() if s["user_id"] == user_id]
         spreads.sort(key=lambda s: s["created_at"], reverse=True)
 
-        total_items = len(spreads)
+        total = len(spreads)
         if limit <= 0:
             limit = 10
 
-        total_pages = max((total_items + limit - 1) // limit, 1)
+        total_pages = max((total + limit - 1) // limit, 1)
         page = max(page, 1)
         offset = (page - 1) * limit
 
         items_raw = spreads[offset : offset + limit]
 
         items: List[SpreadListItem] = []
+
         for s in items_raw:
             interpretation = s.get("interpretation") or ""
-            # по ТЗ: short_preview = первые N символов, rstrip, либо None
             short_preview = (
                 interpretation[:140].rstrip() if interpretation else None
             )
 
-            item = SpreadListItem(
-                id=s["id"],
-                spread_type=s["spread_type"],
-                category=s.get("category") or "general",
-                created_at=s["created_at"],
-                short_preview=short_preview,
-                has_questions=_spread_has_questions(s),
-                interpretation=interpretation,  # 👈 ВАЖНО: пробрасываем полный текст
+            items.append(
+                SpreadListItem(
+                    id=s["id"],
+                    spread_type=s["spread_type"],
+                    category=s.get("category") or "general",
+                    created_at=s["created_at"],
+                    short_preview=short_preview,
+                    has_questions=_spread_has_questions(s),
+                    interpretation=interpretation,
+                )
             )
-            items.append(item)
 
         return {
             "items": items,
             "page": page,
             "total_pages": total_pages,
-            "total_items": total_items,
+            "total_items": total,
         }
 
-    # 4) Алиас для совместимости с роутером TMA
-    def get_spreads_list(
-        self,
-        user_id: int,
-        page: int = 1,
-        limit: int = 10,
-    ) -> Dict[str, Any]:
-        """
-        Алиас для совместимости с существующим роутером.
-        """
+    # Алиас для совместимости
+    def get_spreads_list(self, user_id: int, page: int = 1, limit: int = 10):
         return self.get_spreads(user_id=user_id, page=page, limit=limit)
 
-    # 5) Детальный расклад
-    def get_spread(self, user_id: int, spread_id: int) -> Optional[SpreadDetail]:
+    # Детальный расклад
+    def get_spread(self, user_id: int, spread_id: int):
         s = _SPREADS.get(spread_id)
         if not s or s["user_id"] != user_id:
             return None
-
         return SpreadDetail(
             id=s["id"],
             spread_type=s["spread_type"],
             category=s["category"],
             created_at=s["created_at"],
             cards=s["cards"],
-            interpretation=s.get("interpretation"),
+            interpretation=s["interpretation"],
             question=s.get("question"),
         )
 
-    # 6) Вопросы к раскладу (AI-ответы)
+    # Вопросы
     async def add_spread_question(
         self,
         user_id: int,
         spread_id: int,
         question: str,
     ) -> SpreadQuestionModel:
-        """
-        Создать вопрос к раскладу:
-        - достаём spread из _SPREADS
-        - собираем user_ctx
-        - answer = await _generate_ai_answer(...)
-        - сохраняем в _QUESTIONS и возвращаем SpreadQuestionModel
-        """
+
         global _QUESTION_COUNTER
 
         spread = _SPREADS.get(spread_id)
@@ -498,20 +432,20 @@ class SpreadService:
 
         if not answer:
             answer = (
-                "Это базовый ответ без подключения AI. "
+                "Это базовый ответ без AI. "
                 f"Ваш вопрос: «{question}»."
             )
 
         qid = _QUESTION_COUNTER
         _QUESTION_COUNTER += 1
 
-        record: Dict[str, Any] = {
+        record = {
             "id": qid,
             "spread_id": spread_id,
             "user_id": user_id,
             "question": question,
             "answer": answer,
-            "status": "ready",  # TODO: позже сделать pipeline pending → AI → ready/failed
+            "status": "ready",
             "created_at": _now_iso(),
         }
 
@@ -521,16 +455,13 @@ class SpreadService:
 
         return SpreadQuestionModel(**record)
 
-    def get_spread_questions(self, user_id: int, spread_id: int) -> SpreadQuestionsList:
+    def get_spread_questions(self, user_id: int, spread_id: int):
         spread = _SPREADS.get(spread_id)
         if not spread or spread["user_id"] != user_id:
             raise ValueError("Spread not found")
 
-        raw = sorted(
+        lst = sorted(
             _QUESTIONS.get((user_id, spread_id), []),
             key=lambda x: x["created_at"],
         )
-
-        return SpreadQuestionsList(
-            items=[SpreadQuestionModel(**q) for q in raw]
-        )
+        return SpreadQuestionsList(items=[SpreadQuestionModel(**q) for q in lst])
