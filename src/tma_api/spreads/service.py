@@ -15,7 +15,7 @@ from .models import (
     SpreadQuestionModel,
     SpreadQuestionsList,
 )
-from ..tarot_deck import draw_random_cards  # ✅ реальная колода
+from ..tarot_deck import draw_random_cards  # ✅ обновлённый draw_random_cards
 
 logger = logging.getLogger(__name__)
 
@@ -45,42 +45,6 @@ def _spread_has_questions(s: Dict[str, Any]) -> bool:
     if s.get("user_question") and str(s["user_question"]).strip():
         return True
     return len(_QUESTIONS.get((s["user_id"], s["id"]), [])) > 0
-
-
-def _build_cards(spread_type: str) -> List[Dict[str, Any]]:
-    """
-    B.2 — Использование реальной колоды через draw_random_cards.
-
-    Возвращаем список словарей карточек (payload), без Pydantic-моделей:
-    [
-      {
-        "id": ...,
-        "code": ...,
-        "name": ...,
-        "suit": ...,
-        "arcana": ...,
-        "image_url": ...,
-        "is_reversed": bool,
-      }, ...
-    ]
-    """
-    count = 1 if spread_type == "one" else 3
-    raw_cards = draw_random_cards(count)
-
-    result: List[Dict[str, Any]] = []
-    for rc in raw_cards:
-        result.append(
-            {
-                "id": rc.get("id"),
-                "code": rc.get("code"),
-                "name": rc.get("name"),
-                "suit": rc.get("suit"),
-                "arcana": rc.get("arcana"),
-                "image_url": rc.get("image_url"),
-                "is_reversed": bool(random.getrandbits(1)),
-            }
-        )
-    return result
 
 
 def _get_ai_interpreter() -> Any | None:
@@ -345,6 +309,39 @@ class SpreadService:
                 self._repo = InMemorySpreadRepository()
                 logger.info("SpreadService: using InMemorySpreadRepository")
 
+    # T2.1 — _build_cards как метод сервиса, работающий с обновлённой колодой
+    def _build_cards(self, spread_type: str) -> List[Dict[str, Any]]:
+        """
+        T2.1 — Используем обновлённый draw_random_cards и приводим
+        карты к "плоскому" dict-формату, который дальше уходит:
+        - в _SPREADS/БД,
+        - в AI,
+        - в сборку CardModel.
+        """
+        if spread_type == "one":
+            count = 1
+        else:
+            count = 3
+
+        raw_cards = draw_random_cards(count)
+
+        cards_payload: List[Dict[str, Any]] = []
+        for card in raw_cards:
+            is_reversed = bool(random.getrandbits(1))
+
+            cards_payload.append(
+                {
+                    "id": card.get("id"),
+                    "name": card.get("name"),
+                    "suit": card.get("suit"),
+                    "arcana": card.get("type"),  # major/minor
+                    "image_url": card.get("image_url"),
+                    "is_reversed": is_reversed,
+                }
+            )
+
+        return cards_payload
+
     # AUTO-расклад
     async def create_auto_spread(
         self,
@@ -375,8 +372,13 @@ class SpreadService:
             normalized_category = "daily"
             user_question = None
 
-        # B.2 — берём реальные карты из колоды (payload)
-        cards_payload = _build_cards(spread_type)
+        # T2.2 — явная обработка ошибок колоды
+        try:
+            cards_payload = self._build_cards(spread_type)
+        except Exception as e:
+            logger.exception("Failed to build cards for spread_type=%s: %s", spread_type, e)
+            # ValueError → роутер превратит в 400 с нормальным APIError
+            raise ValueError(f"tarot_deck_error: {e}") from e
 
         # Пытаемся получить интерпретацию через AI
         try:
@@ -402,7 +404,7 @@ class SpreadService:
         created_at = _now_iso()
         effective_category = normalized_category or "general"
 
-        # A.5 — чёткая структура записи
+        # Структура записи — A.5
         record: Dict[str, Any] = {
             "id": spread_id,
             "user_id": user_id,

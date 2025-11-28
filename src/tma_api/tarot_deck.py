@@ -7,71 +7,129 @@ import logging
 import random
 from functools import lru_cache
 from pathlib import Path
-from typing import TypedDict, NotRequired, Any
+from typing import TypedDict, NotRequired, Any, List
 
 logger = logging.getLogger(__name__)
 
 
+# --------------------------------------------
+# TypedDict под карту из JSON
+# --------------------------------------------
 class TarotCard(TypedDict, total=False):
-    """
-    Узкий тип под элементы JSON-колоды.
-
-    Поля сделаны опциональными, т.к. структура JSON может расширяться.
-    """
     id: NotRequired[int]
     name: NotRequired[str]
+    type: NotRequired[str]              # major / minor
     suit: NotRequired[str]
-    arcana: NotRequired[str]
-    is_reversed: NotRequired[bool]
+    description: NotRequired[str]
+    meaning_upright: NotRequired[str]
+    meaning_reversed: NotRequired[str]
+    keywords: NotRequired[List[str]]
     image_url: NotRequired[str]
-    # допускаем дополнительные ключи без явного описания
+    is_reversed: NotRequired[bool]      # Не обязателен в JSON
 
 
-# .../project_root, если файл лежит так:
-# project_root/
-#   data/tarot_deck.json
-#   src/tma_api/tarot_deck.py
+# --------------------------------------------
+# Пути
+# --------------------------------------------
 BASE_DIR = Path(__file__).resolve().parents[2]
+DECK_PATH = BASE_DIR / "data" / "tarot_deck.json"
 
 
+# --------------------------------------------
+# Ленивый универсальный парсер структуры JSON
+# --------------------------------------------
 @lru_cache
 def _load_deck() -> list[TarotCard]:
     """
-    Лениво загружаем JSON-колоду с диска и кешируем результат.
+    Загружает таро-колоду из JSON в одном из форматов:
 
-    Ожидается структура:
-    {
-        "cards": [ ... ]
-    }
-    либо просто список карт в корне.
+    Формат №1:
+        { "cards": [ {...}, ... ] }
+
+    Формат №2:
+        [ {...}, {...}, ... ]
+
+    Формат №3:
+        { "0": {...}, "1": {...}, "shut": {...}, ... }
+
+    Если структура неизвестна → ValueError.
     """
-    deck_path = BASE_DIR / "data" / "tarot_deck.json"
-    logger.info("Loading tarot deck from %s", deck_path)
 
-    with deck_path.open("r", encoding="utf-8") as f:
+    logger.info("Loading tarot deck from %s", DECK_PATH)
+
+    with DECK_PATH.open("r", encoding="utf-8") as f:
         raw: Any = json.load(f)
 
+    cards: list[TarotCard]
+
+    # Формат №1
     if isinstance(raw, dict) and "cards" in raw:
-        cards = raw["cards"]
+        if isinstance(raw["cards"], list):
+            cards = raw["cards"]  # type: ignore[assignment]
+        else:
+            raise ValueError("JSON key 'cards' exists but is not a list")
+
+    # Формат №2
+    elif isinstance(raw, list):
+        cards = raw  # type: ignore[assignment]
+
+    # Формат №3 (словарь без 'cards')
+    elif isinstance(raw, dict):
+        # Берём все значения
+        values = list(raw.values())
+        # Значения должны быть dict/карты
+        if not all(isinstance(v, dict) for v in values):
+            raise ValueError(
+                "Unsupported tarot deck JSON mapping: some values are not dicts"
+            )
+        cards = values  # type: ignore[assignment]
+
+    # Неподдерживаемый тип
     else:
-        cards = raw
+        raise ValueError(f"Unsupported tarot deck JSON structure: {type(raw)}")
 
-    try:
-        size = len(cards)  # type: ignore[arg-type]
-    except Exception:
-        size = -1
-
+    # Логирование результата
+    size = len(cards)
     logger.info("Tarot deck loaded successfully (cards: %s)", size)
 
-    return cards  # type: ignore[return-value]
+    if size < 3:
+        logger.warning(
+            "Tarot deck contains only %s cards; some spreads may duplicate cards.",
+            size,
+        )
+
+    return cards
 
 
+# --------------------------------------------
+# Устойчивый выбор карт
+# --------------------------------------------
 def draw_random_cards(count: int) -> list[TarotCard]:
     """
-    Выбрать случайные карты из колоды без повторов.
-
-    :param count: сколько карт вытянуть
-    :raises ValueError: если count > размера колоды (random.sample)
+    Нормально работает при любой длине колоды:
+    - count <= 0 → []
+    - len(deck) >= count → random.sample
+    - len(deck) < count → предупреждение + random.choices (допускаются повторы)
     """
+    if count <= 0:
+        return []
+
     deck = _load_deck()
-    return random.sample(deck, k=count)
+
+    if not deck:
+        raise RuntimeError("Tarot deck is empty")
+
+    deck_size = len(deck)
+
+    if deck_size >= count:
+        return random.sample(deck, k=count)
+
+    # Деградация: карт меньше, чем надо — выбираем с повторами
+    logger.warning(
+        "Requested %s cards, but deck has only %s. "
+        "Allowing duplicates via random.choices.",
+        count,
+        deck_size,
+    )
+
+    return random.choices(deck, k=count)
