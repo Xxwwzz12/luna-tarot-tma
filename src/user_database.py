@@ -15,8 +15,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Импорт конфигурации
-from .config import DATABASE_URL
+# Импорт конфигурации (безопасный)
+try:
+    from .config import DATABASE_URL
+except ImportError:
+    # Конфига нет (например, на Render) — читаем из ENV или ставим дефолт
+    import os
+    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/luna_users.db")
 
 # --- TMA-friendly connection factory ---------------------------------------
 
