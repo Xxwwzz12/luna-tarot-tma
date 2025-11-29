@@ -2,120 +2,98 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Protocol, Tuple
+from typing import Protocol, Any, Iterable, Tuple, List, Dict
 
 
 class SpreadRepository(Protocol):
     """
-    Абстрактный интерфейс репозитория раскладов.
+    Абстрактный репозиторий раскладов и вопросов.
 
-    Важно: сигнатуры методов синхронизированы с реализациями.
+    Отличия по контракту:
+
+    - get_spread / list_questions НЕ принимают user_id — проверка владельца лежит на сервисе.
+    - list_spreads делает пагинацию по user_id и возвращает (total, items).
     """
 
-    def save_spread(self, data: dict[str, Any]) -> int:
-        """
-        Сохранить расклад, вернуть его ID.
-        """
+    def save_spread(self, data: Dict[str, Any]) -> int:
+        """Сохранить расклад. Вернуть id."""
         ...
 
-    def get_spread(self, spread_id: int) -> dict[str, Any] | None:
-        """
-        Получить один расклад по ID (без проверки user_id).
-        Проверка "чей расклад" должна быть на уровне сервиса.
-        """
+    def get_spread(self, spread_id: int) -> Dict[str, Any] | None:
+        """Получить расклад по id или None."""
         ...
 
     def list_spreads(
-        self,
-        user_id: int,
-        offset: int,
-        limit: int,
-    ) -> tuple[int, list[dict[str, Any]]]:
+        self, user_id: int, offset: int, limit: int
+    ) -> Tuple[int, List[Dict[str, Any]]]:
         """
-        Вернуть (total, items) по user_id с учётом offset/limit.
+        Вернуть (total_items, items) для раскладов пользователя.
+
+        offset / limit — параметры пагинации.
         """
         ...
 
-    def save_question(self, data: dict[str, Any]) -> int:
-        """
-        Сохранить вопрос к раскладу, вернуть его ID.
-        """
+    def save_question(self, data: Dict[str, Any]) -> int:
+        """Сохранить уточняющий вопрос. Вернуть id."""
         ...
 
-    def list_questions(self, spread_id: int) -> list[dict[str, Any]]:
-        """
-        Вернуть список вопросов по spread_id (без проверки user_id).
-        Проверка "чужой вопрос" — на уровне сервиса.
-        """
+    def list_questions(self, spread_id: int) -> List[Dict[str, Any]]:
+        """Вернуть список вопросов по id расклада."""
         ...
 
 
 class InMemorySpreadRepository(SpreadRepository):
     """
-    Простая in-memory реализация репозитория.
+    Простая in-memory реализация для dev-режима и тестов.
 
-    Сейчас это по сути инкапсулирует текущий подход с _SPREADS / _QUESTIONS,
-    но в одном месте и с понятным интерфейсом. Позже можно заменить или
-    дополнить SQL-реализацией.
+    Хранит данные в локальных словарях процесса.
     """
 
     def __init__(self) -> None:
-        # Хранилище раскладов: spread_id -> dict
         self._spreads: Dict[int, Dict[str, Any]] = {}
-        self._spread_index: int = 0
-
-        # Хранилище вопросов: question_id -> dict
         self._questions: Dict[int, Dict[str, Any]] = {}
-        self._question_index: int = 0
+        self._spread_counter: int = 0
+        self._question_counter: int = 0
 
-    # ---- Внутренние helpers ----
+    # --- Расклады ---
 
-    def _next_spread_id(self) -> int:
-        self._spread_index += 1
-        return self._spread_index
+    def save_spread(self, data: Dict[str, Any]) -> int:
+        spread_id = int(data.get("id") or 0)
+        if spread_id > 0 and spread_id in self._spreads:
+            # update
+            stored = self._spreads[spread_id].copy()
+            stored.update(data)
+            stored["id"] = spread_id
+            self._spreads[spread_id] = stored
+            return spread_id
 
-    def _next_question_id(self) -> int:
-        self._question_index += 1
-        return self._question_index
-
-    # ---- SpreadRepository implementation ----
-
-    def save_spread(self, data: dict[str, Any]) -> int:
-        """
-        Сохраняем расклад.
-
-        Если id не передан в data — создаём новый, иначе перезаписываем существующий.
-        """
-        spread_id = data.get("id")
-        if not isinstance(spread_id, int):
-            spread_id = self._next_spread_id()
-            data = {**data, "id": spread_id}
-
-        self._spreads[spread_id] = data
+        # insert
+        self._spread_counter += 1
+        spread_id = self._spread_counter
+        stored = data.copy()
+        stored["id"] = spread_id
+        self._spreads[spread_id] = stored
         return spread_id
 
-    def get_spread(self, spread_id: int) -> dict[str, Any] | None:
+    def get_spread(self, spread_id: int) -> Dict[str, Any] | None:
         return self._spreads.get(spread_id)
 
     def list_spreads(
-        self,
-        user_id: int,
-        offset: int,
-        limit: int,
-    ) -> tuple[int, list[dict[str, Any]]]:
-        """
-        Фильтрация по user_id + простая пагинация.
-
-        Сортируем по created_at (если есть), иначе по id (по убыванию).
-        """
-        items: List[Dict[str, Any]] = [
-            s for s in self._spreads.values() if s.get("user_id") == user_id
+        self, user_id: int, offset: int, limit: int
+    ) -> Tuple[int, List[Dict[str, Any]]]:
+        # фильтруем по user_id
+        items = [
+            s
+            for s in self._spreads.values()
+            if int(s.get("user_id") or 0) == int(user_id)
         ]
 
-        def _sort_key(item: Dict[str, Any]):
-            # created_at ожидается строкой ISO, но здесь можно оставить как есть.
-            # Если поля нет — сортируем по id.
-            return item.get("created_at") or item.get("id") or 0
+        # сортировка: сначала по created_at DESC, затем по id DESC
+        def _sort_key(s: Dict[str, Any]):
+            return (
+                s.get("created_at") or "",
+                int(s.get("id") or 0),
+            )
 
         items.sort(key=_sort_key, reverse=True)
 
@@ -123,74 +101,81 @@ class InMemorySpreadRepository(SpreadRepository):
         if offset < 0:
             offset = 0
         if limit <= 0:
-            return total, []
+            page_items = items[offset:]
+        else:
+            page_items = items[offset : offset + limit]
 
-        sliced = items[offset : offset + limit]
-        return total, sliced
+        return total, page_items
 
-    def save_question(self, data: dict[str, Any]) -> int:
-        """
-        Сохраняем вопрос к раскладу.
+    # --- Вопросы ---
 
-        Ожидаются поля:
-        - spread_id
-        - text / question
-        - (опционально) created_at и т.п.
-        """
-        question_id = data.get("id")
-        if not isinstance(question_id, int):
-            question_id = self._next_question_id()
-            data = {**data, "id": question_id}
+    def save_question(self, data: Dict[str, Any]) -> int:
+        qid = int(data.get("id") or 0)
+        if qid > 0 and qid in self._questions:
+            stored = self._questions[qid].copy()
+            stored.update(data)
+            stored["id"] = qid
+            self._questions[qid] = stored
+            return qid
 
-        self._questions[question_id] = data
-        return question_id
+        self._question_counter += 1
+        qid = self._question_counter
+        stored = data.copy()
+        stored["id"] = qid
+        self._questions[qid] = stored
+        return qid
 
-    def list_questions(self, spread_id: int) -> list[dict[str, Any]]:
-        """
-        Возвращаем все вопросы для указанного расклада, по id по возрастанию.
-        """
-        items: List[Dict[str, Any]] = [
-            q for q in self._questions.values() if q.get("spread_id") == spread_id
+    def list_questions(self, spread_id: int) -> List[Dict[str, Any]]:
+        items = [
+            q
+            for q in self._questions.values()
+            if int(q.get("spread_id") or 0) == int(spread_id)
         ]
-        items.sort(key=lambda q: q.get("id") or 0)
+
+        # сортируем по времени ASC, потом по id ASC
+        def _sort_key(q: Dict[str, Any]):
+            return (
+                q.get("created_at") or "",
+                int(q.get("id") or 0),
+            )
+
+        items.sort(key=_sort_key)
         return items
 
 
 class SQLiteSpreadRepository(SpreadRepository):
     """
-    Заглушка под будущую SQL-реализацию.
+    Обёртка над реальной SQLite-реализацией.
 
-    Сейчас просто оборачивает InMemorySpreadRepository, чтобы:
-    - сигнатуры методов были синхронизированы с Protocol;
-    - уже можно было протаскивать этот класс по зависимостям;
-    - позже заменить тело методов на реальные SQL-запросы.
+    Нужна, чтобы:
 
-    При желании можно будет принять сюда sqlite3.Connection и переписать
-    внутреннюю реализацию.
+    - сервис импортировал её из одного места: src.tma_api.spreads.repository;
+    - избежать жёсткого циклического импорта между repository.py и sqlite_repository.py.
+
+    Внутри лениво создаём экземпляр настоящего репозитория.
     """
 
-    def __init__(self) -> None:
-        # Пока — in-memory внутри, чтобы всё работало.
-        self._inner = InMemorySpreadRepository()
+    def __init__(self, conn_factory) -> None:
+        # Ленивая загрузка, чтобы не словить цикл импортов на уровне модулей
+        from .sqlite_repository import SQLiteSpreadRepository as _Impl
 
-    def save_spread(self, data: dict[str, Any]) -> int:
+        self._inner: SpreadRepository = _Impl(conn_factory)
+
+    def save_spread(self, data: Dict[str, Any]) -> int:
         return self._inner.save_spread(data)
 
-    def get_spread(self, spread_id: int) -> dict[str, Any] | None:
+    def get_spread(self, spread_id: int) -> Dict[str, Any] | None:
         return self._inner.get_spread(spread_id)
 
     def list_spreads(
-        self,
-        user_id: int,
-        offset: int,
-        limit: int,
-    ) -> tuple[int, list[dict[str, Any]]]:
-        return self._inner.list_spreads(user_id=user_id, offset=offset, limit=limit)
+        self, user_id: int, offset: int, limit: int
+    ) -> Tuple[int, List[Dict[str, Any]]]:
+        return self._inner.list_spreads(user_id, offset, limit)
 
-    def save_question(self, data: dict[str, Any]) -> int:
+    def save_question(self, data: Dict[str, Any]) -> int:
         return self._inner.save_question(data)
 
-    def list_questions(self, spread_id: int) -> list[dict[str, Any]]:
+    def list_questions(self, spread_id: int) -> List[Dict[str, Any]]:
         return self._inner.list_questions(spread_id)
 
 
