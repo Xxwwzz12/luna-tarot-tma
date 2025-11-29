@@ -6,6 +6,7 @@ import logging
 import asyncio
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 
 # Настройка логирования
 logging.basicConfig(
@@ -16,6 +17,33 @@ logger = logging.getLogger(__name__)
 
 # Импорт конфигурации
 from .config import DATABASE_URL
+
+# --- TMA-friendly connection factory ---------------------------------------
+
+# Базовая директория проекта: .../tarot_bot/src
+BASE_DIR = Path(__file__).resolve().parents[1]
+
+# Путь к БД для TMA API (SQLiteSpreadRepository и т.п.)
+TMA_DB_PATH = BASE_DIR / "data" / "luna_users.db"
+TMA_DB_PATH.parent.mkdir(parents=True, exist_ok=True)  # гарантируем наличие каталога
+
+
+def get_connection() -> sqlite3.Connection:
+    """
+    Гарантированное подключение для TMA API.
+    Используется SQLiteSpreadRepository(conn_factory=get_connection).
+
+    Отличия от UserDatabase:
+    - отдельный connection на каждый вызов (без глобального self.conn)
+    - row_factory = sqlite3.Row для обращения row["field"]
+    - путь стабилен: src/data/luna_users.db
+    """
+    conn = sqlite3.connect(TMA_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    # Включаем внешние ключи (в SQLite по умолчанию OFF)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
 
 class UserDatabase:
     def __init__(self):
@@ -976,6 +1004,7 @@ class UserDatabase:
         if self.conn:
             self.conn.close()
             logger.info("🔌 Соединение с базой данных закрыто")
+
 
 # Глобальный экземпляр для использования в проекте
 user_db = UserDatabase()

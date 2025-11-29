@@ -5,7 +5,7 @@ import os
 import random
 from dataclasses import dataclass
 from datetime import datetime, date
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from .models import (
@@ -15,18 +15,16 @@ from .models import (
     SpreadQuestionModel,
     SpreadQuestionsList,
 )
-from ..tarot_deck import draw_random_cards  # ✅ обновлённый draw_random_cards
+from .repository import (
+    SpreadRepository,
+    InMemorySpreadRepository,
+    SQLiteSpreadRepository,
+)
+from ..tarot_deck import draw_random_cards  # обновлённый draw_random_cards
 
 logger = logging.getLogger(__name__)
 
-# 🔧 In-memory storage (используются InMemorySpreadRepository)
-_SPREADS: Dict[int, Dict[str, Any]] = {}
-_SPREAD_COUNTER = 1
-
-_QUESTIONS: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
-_QUESTION_INDEX: Dict[int, Dict[str, Any]] = {}
-_QUESTION_COUNTER = 1
-
+# Интерактивные сессии остаются чисто in-memory
 _SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 _ai_interpreter: Any | None = None
@@ -38,30 +36,6 @@ _ai_interpreter: Any | None = None
 
 def _now_iso() -> str:
     return datetime.utcnow().isoformat()
-
-
-def _spread_has_questions(s: Dict[str, Any]) -> bool:
-    """Флаг has_questions для списка/деталей раскладов."""
-    if s.get("user_question") and str(s["user_question"]).strip():
-        return True
-    return len(_QUESTIONS.get((s["user_id"], s["id"]), [])) > 0
-
-
-def _get_ai_interpreter() -> Any | None:
-    """Singleton AIInterpreter."""
-    global _ai_interpreter
-    if _ai_interpreter is not None:
-        return _ai_interpreter
-
-    try:
-        from ...ai_interpreter import AIInterpreter  # type: ignore
-
-        _ai_interpreter = AIInterpreter()
-    except Exception as e:
-        logger.warning("AIInterpreter unavailable for TMA: %s", e)
-        _ai_interpreter = None
-
-    return _ai_interpreter
 
 
 def _compute_age(birth_date_val: Any) -> Optional[int]:
@@ -97,7 +71,7 @@ class UserContext:
 
 
 def _get_user_ctx(user_id: int) -> UserContext:
-    """Пытаемся достать профиль мягко."""
+    """Пытаемся достать профиль мягко (ProfileService → user_database)."""
     profile: Any = None
 
     try:
@@ -143,9 +117,7 @@ def _generate_basic_interpretation(
     category: Optional[str],
     user_question: Optional[str],
 ) -> str:
-    """
-    A.4 — базовый fallback, если AI совсем ничего не дал.
-    """
+    """Базовый fallback, если AI ничего не дал."""
     cat = category or "general"
     if user_question:
         return (
@@ -155,65 +127,22 @@ def _generate_basic_interpretation(
     return f"Интерпретация расклада ({spread_type}/{cat})."
 
 
-# ─────────────────────────────────────
-# Repositories: in-memory & SQLite stub
-# ─────────────────────────────────────
+def _get_ai_interpreter() -> Any | None:
+    """Singleton AIInterpreter."""
+    global _ai_interpreter
+    if _ai_interpreter is not None:
+        return _ai_interpreter
 
-class InMemorySpreadRepository:
-    """
-    In-memory реализация на основе модульных словарей _SPREADS / _QUESTIONS.
-    """
+    try:
+        from ...ai_interpreter import AIInterpreter  # type: ignore
 
-    def save_spread(self, record: Dict[str, Any]) -> None:
-        _SPREADS[record["id"]] = record
+        _ai_interpreter = AIInterpreter()
+    except Exception as e:
+        logger.warning("AIInterpreter unavailable for TMA: %s", e)
+        _ai_interpreter = None
 
-    def list_spreads(self, user_id: int) -> List[Dict[str, Any]]:
-        return [s for s in _SPREADS.values() if s["user_id"] == user_id]
+    return _ai_interpreter
 
-    def get_spread(self, user_id: int, spread_id: int) -> Optional[Dict[str, Any]]:
-        s = _SPREADS.get(spread_id)
-        if not s or s["user_id"] != user_id:
-            return None
-        return s
-
-    def save_question(self, record: Dict[str, Any]) -> None:
-        key = (record["user_id"], record["spread_id"])
-        _QUESTIONS.setdefault(key, []).append(record)
-        _QUESTION_INDEX[record["id"]] = record
-
-    def list_questions(self, user_id: int, spread_id: int) -> List[Dict[str, Any]]:
-        return _QUESTIONS.get((user_id, spread_id), [])
-
-
-class SQLiteSpreadRepository:
-    """
-    Заглушка под будущую реализацию через SQLite.
-    Сейчас создаётся только если TMA_USE_SQLITE=1,
-    но методы пока не реализованы.
-    """
-
-    def __init__(self, get_connection):
-        self._get_connection = get_connection
-
-    def save_spread(self, record: Dict[str, Any]) -> None:
-        raise NotImplementedError("SQLiteSpreadRepository.save_spread is not implemented yet")
-
-    def list_spreads(self, user_id: int) -> List[Dict[str, Any]]:
-        raise NotImplementedError("SQLiteSpreadRepository.list_spreads is not implemented yet")
-
-    def get_spread(self, user_id: int, spread_id: int) -> Optional[Dict[str, Any]]:
-        raise NotImplementedError("SQLiteSpreadRepository.get_spread is not implemented yet")
-
-    def save_question(self, record: Dict[str, Any]) -> None:
-        raise NotImplementedError("SQLiteSpreadRepository.save_question is not implemented yet")
-
-    def list_questions(self, user_id: int, spread_id: int) -> List[Dict[str, Any]]:
-        raise NotImplementedError("SQLiteSpreadRepository.list_questions is not implemented yet")
-
-
-# ─────────────────────────────────────
-# AI wrappers
-# ─────────────────────────────────────
 
 async def _generate_ai_interpretation(
     spread_type: str,
@@ -222,7 +151,7 @@ async def _generate_ai_interpretation(
     question: Optional[str],
     user_ctx: UserContext,
 ) -> Optional[str]:
-
+    """Async-обёртка поверх AIInterpreter.generate_interpretation."""
     interpreter = _get_ai_interpreter()
     if not interpreter:
         return None
@@ -251,7 +180,7 @@ async def _generate_ai_answer(
     question: str,
     user_ctx: UserContext,
 ) -> Optional[str]:
-
+    """Async-обёртка поверх AIInterpreter.generate_question_answer (пока не используется)."""
     interpreter = _get_ai_interpreter()
     if not interpreter:
         return None
@@ -274,14 +203,30 @@ async def _generate_ai_answer(
         return None
 
 
+def _spread_has_questions(repo: SpreadRepository, spread: Dict[str, Any]) -> bool:
+    """
+    Флаг has_questions:
+
+    - true, если есть user_question (вопрос до расклада),
+    - или если есть хотя бы один записанный вопрос по раскладу.
+    """
+    if spread.get("user_question") and str(spread["user_question"]).strip():
+        return True
+    try:
+        questions = repo.list_questions(spread["id"])
+    except Exception:
+        return False
+    return len(questions) > 0
+
+
 # ─────────────────────────────────────
 # SERVICE
 # ─────────────────────────────────────
 
 class SpreadService:
-    def __init__(self, repo: Any | None = None):
+    def __init__(self, repo: SpreadRepository | None = None):
         """
-        C.3 — Переключатель in-memory → SQLite через репозиторий.
+        ТЗ 23.4 — финальный переключатель in-memory → SQLite.
 
         Приоритет:
         - если явно передан repo — используем его;
@@ -300,21 +245,20 @@ class SpreadService:
                     self._repo = SQLiteSpreadRepository(get_connection)
                     logger.info("SpreadService: using SQLiteSpreadRepository")
                 except Exception:
-                    logger.warning(
-                        "Failed to init SQLiteSpreadRepository, falling back to InMemorySpreadRepository",
-                        exc_info=True,
+                    logger.exception(
+                        "Failed to init SQLiteSpreadRepository, falling back to InMemorySpreadRepository"
                     )
                     self._repo = InMemorySpreadRepository()
             else:
-                self._repo = InMemorySpreadRepository()
                 logger.info("SpreadService: using InMemorySpreadRepository")
+                self._repo = InMemorySpreadRepository()
 
     # T2.1 — _build_cards как метод сервиса, работающий с обновлённой колодой
     def _build_cards(self, spread_type: str) -> List[Dict[str, Any]]:
         """
-        T2.1 — Используем обновлённый draw_random_cards и приводим
+        Используем обновлённый draw_random_cards и приводим
         карты к "плоскому" dict-формату, который дальше уходит:
-        - в _SPREADS/БД,
+        - в репозиторий (_repo.save_spread),
         - в AI,
         - в сборку CardModel.
         """
@@ -357,10 +301,6 @@ class SpreadService:
         - для spread_type == "one" считаем это картой дня:
           category="daily", user_question=None.
         """
-        global _SPREAD_COUNTER
-        spread_id = _SPREAD_COUNTER
-        _SPREAD_COUNTER += 1
-
         user_ctx = _get_user_ctx(user_id)
 
         # «Вопрос до расклада»
@@ -376,8 +316,10 @@ class SpreadService:
         try:
             cards_payload = self._build_cards(spread_type)
         except Exception as e:
-            logger.exception("Failed to build cards for spread_type=%s: %s", spread_type, e)
-            # ValueError → роутер превратит в 400 с нормальным APIError
+            logger.exception(
+                "Failed to build cards for spread_type=%s: %s", spread_type, e
+            )
+            # ValueError → роутер превратит в 400 с понятным APIError
             raise ValueError(f"tarot_deck_error: {e}") from e
 
         # Пытаемся получить интерпретацию через AI
@@ -392,7 +334,7 @@ class SpreadService:
         except Exception:
             interpretation = None
 
-        # A.4 — гарантированный fallback + нормализация
+        # Гарантированный fallback + нормализация
         if not interpretation or not interpretation.strip():
             interpretation = _generate_basic_interpretation(
                 spread_type=spread_type,
@@ -404,9 +346,9 @@ class SpreadService:
         created_at = _now_iso()
         effective_category = normalized_category or "general"
 
-        # Структура записи — A.5
+        # Структура записи для репозитория
         record: Dict[str, Any] = {
-            "id": spread_id,
+            # id задаст репозиторий
             "user_id": user_id,
             "spread_type": spread_type,
             "category": effective_category,   # daily/general
@@ -416,8 +358,9 @@ class SpreadService:
             "created_at": created_at,
         }
 
-        # C.3 — сохраняем через репозиторий
-        self._repo.save_spread(record)
+        # 4.2 — сохраняем через репозиторий и получаем id
+        spread_id = self._repo.save_spread(record)
+        record["id"] = spread_id  # на случай, если repo сам сгенерировал id
 
         # Для ответа API собираем CardModel (минимальный вид)
         cards_models = [
@@ -515,21 +458,20 @@ class SpreadService:
         limit: int = 10,
     ) -> Dict[str, Any]:
         """
-        C.3 — теперь берём список через repo.list_spreads(user_id),
-        а пагинацию/модели строим в сервисе.
+        4.3 — список через repo.list_spreads(user_id, offset, limit),
+        а пагинация/модели строятся в сервисе.
         """
-        spreads = self._repo.list_spreads(user_id)
-        spreads.sort(key=lambda s: s["created_at"], reverse=True)
-
-        total = len(spreads)
         if limit <= 0:
             limit = 10
-
-        total_pages = max((total + limit - 1) // limit, 1)
         page = max(page, 1)
         offset = (page - 1) * limit
 
-        items_raw = spreads[offset : offset + limit]
+        total_items, items_raw = self._repo.list_spreads(
+            user_id=user_id,
+            offset=offset,
+            limit=limit,
+        )
+        total_pages = max((total_items + limit - 1) // limit, 1)
 
         items: List[SpreadListItem] = []
 
@@ -554,7 +496,7 @@ class SpreadService:
                     category=item_category,
                     created_at=s["created_at"],
                     short_preview=short_preview,
-                    has_questions=_spread_has_questions(s),
+                    has_questions=_spread_has_questions(self._repo, s),
                     interpretation=interpretation,
                 )
             )
@@ -563,7 +505,7 @@ class SpreadService:
             "items": items,
             "page": page,
             "total_pages": total_pages,
-            "total_items": total,
+            "total_items": total_items,
         }
 
     # Алиас для совместимости
@@ -571,15 +513,15 @@ class SpreadService:
         return self.get_spreads(user_id=user_id, page=page, limit=limit)
 
     # Детальный расклад
-    def get_spread(self, user_id: int, spread_id: int):
+    def get_spread(self, user_id: int, spread_id: int) -> SpreadDetail:
         """
-        C.3 — теперь через repo.get_spread(user_id, spread_id).
+        4.4 — только через repo.get_spread(spread_id) и проверку владельца.
         """
-        s = self._repo.get_spread(user_id, spread_id)
-        if not s:
-            return None
+        raw = self._repo.get_spread(spread_id)
+        if not raw or raw.get("user_id") != user_id:
+            raise ValueError("spread_not_found")
 
-        cards_payload = s.get("cards") or []
+        cards_payload = raw.get("cards") or []
         cards_models = [
             CardModel(
                 position=i + 1,
@@ -590,13 +532,13 @@ class SpreadService:
         ]
 
         return SpreadDetail(
-            id=s["id"],
-            spread_type=s["spread_type"],
-            category=s.get("category") or "general",
-            created_at=s["created_at"],
+            id=raw["id"],
+            spread_type=raw["spread_type"],
+            category=raw.get("category") or "general",
+            created_at=raw["created_at"],
             cards=cards_models,
-            interpretation=s.get("interpretation"),
-            question=s.get("user_question"),
+            interpretation=raw.get("interpretation"),
+            question=raw.get("user_question"),
         )
 
     # Вопросы
@@ -607,58 +549,43 @@ class SpreadService:
         question: str,
     ) -> SpreadQuestionModel:
         """
-        Вопрос к УЖЕ существующему раскладу.
-        A.6 — question здесь НЕ вопрос до расклада, а уточнение к нему.
-        user_question в _SPREADS / БД не трогаем.
+        4.5 — Вопрос к УЖЕ существующему раскладу.
+
+        Здесь question — уточнение к раскладу (не вопрос до расклада).
+        Ответ и статус на этом этапе: answer=None, status="pending".
         """
-        global _QUESTION_COUNTER
+        # Проверяем, что расклад существует и принадлежит user_id
+        raw_spread = self._repo.get_spread(spread_id)
+        if not raw_spread or raw_spread.get("user_id") != user_id:
+            raise ValueError("spread_not_found")
 
-        spread = self._repo.get_spread(user_id, spread_id)
-        if not spread:
-            raise ValueError("Spread not found")
-
-        user_ctx = _get_user_ctx(user_id)
-
-        try:
-            answer = await _generate_ai_answer(spread, question, user_ctx)
-        except Exception:
-            answer = None
-
-        if not answer:
-            answer = (
-                "Это базовый ответ без AI. "
-                f"Ваш вопрос: «{question}»."
-            )
-
-        qid = _QUESTION_COUNTER
-        _QUESTION_COUNTER += 1
-
-        record = {
-            "id": qid,
+        created_at = _now_iso()
+        record: Dict[str, Any] = {
             "spread_id": spread_id,
             "user_id": user_id,
             "question": question,
-            "answer": answer,
-            "status": "ready",  # TODO: pipeline pending → AI → ready/failed
-            "created_at": _now_iso(),
+            "answer": None,
+            "status": "pending",
+            "created_at": created_at,
         }
 
-        # C.3 — сохраняем через репозиторий
-        self._repo.save_question(record)
+        qid = self._repo.save_question(record)
+        record["id"] = qid
 
         return SpreadQuestionModel(**record)
 
-    def get_spread_questions(self, user_id: int, spread_id: int):
+    def get_spread_questions(self, user_id: int, spread_id: int) -> SpreadQuestionsList:
         """
-        C.3 — список вопросов по раскладу через repo.list_questions(...)
+        4.5 — сначала убеждаемся, что расклад не чужой,
+        затем берём список вопросов через repo.list_questions(spread_id).
         """
-        # убедимся, что расклад существует и принадлежит пользователю
-        spread = self._repo.get_spread(user_id, spread_id)
-        if not spread:
-            raise ValueError("Spread not found")
+        raw_spread = self._repo.get_spread(spread_id)
+        if not raw_spread or raw_spread.get("user_id") != user_id:
+            raise ValueError("spread_not_found")
 
-        lst = sorted(
-            self._repo.list_questions(user_id, spread_id),
-            key=lambda x: x["created_at"],
-        )
-        return SpreadQuestionsList(items=[SpreadQuestionModel(**q) for q in lst])
+        rows = self._repo.list_questions(spread_id)
+        # На всякий случай сортируем по created_at от старых к новым
+        rows_sorted = sorted(rows, key=lambda r: r.get("created_at") or "")
+
+        items = [SpreadQuestionModel(**row) for row in rows_sorted]
+        return SpreadQuestionsList(items=items)

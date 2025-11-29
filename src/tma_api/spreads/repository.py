@@ -9,20 +9,19 @@ class SpreadRepository(Protocol):
     """
     Абстрактный интерфейс репозитория раскладов.
 
-    Позже сюда можно повесить SQL-репозиторий, не трогая сервис.
+    Важно: сигнатуры методов синхронизированы с реализациями.
     """
 
     def save_spread(self, data: dict[str, Any]) -> int:
         """
         Сохранить расклад, вернуть его ID.
-
-        Ожидается, что в data уже есть все необходимые поля (user_id, spread_type и т.п.).
         """
         ...
 
     def get_spread(self, spread_id: int) -> dict[str, Any] | None:
         """
-        Получить один расклад по ID.
+        Получить один расклад по ID (без проверки user_id).
+        Проверка "чей расклад" должна быть на уровне сервиса.
         """
         ...
 
@@ -33,10 +32,7 @@ class SpreadRepository(Protocol):
         limit: int,
     ) -> tuple[int, list[dict[str, Any]]]:
         """
-        Вернуть (total, items) — общее количество раскладов пользователя и
-        срез по offset/limit.
-
-        Сервис дальше сам завернёт это в модели.
+        Вернуть (total, items) по user_id с учётом offset/limit.
         """
         ...
 
@@ -48,7 +44,8 @@ class SpreadRepository(Protocol):
 
     def list_questions(self, spread_id: int) -> list[dict[str, Any]]:
         """
-        Вернуть список вопросов по spread_id.
+        Вернуть список вопросов по spread_id (без проверки user_id).
+        Проверка "чужой вопрос" — на уровне сервиса.
         """
         ...
 
@@ -58,8 +55,8 @@ class InMemorySpreadRepository(SpreadRepository):
     Простая in-memory реализация репозитория.
 
     Сейчас это по сути инкапсулирует текущий подход с _SPREADS / _QUESTIONS,
-    но в одном месте и с понятным интерфейсом. Позже сюда можно добавить
-    SQL-реализацию и переключить SpreadService на неё.
+    но в одном месте и с понятным интерфейсом. Позже можно заменить или
+    дополнить SQL-реализацией.
     """
 
     def __init__(self) -> None:
@@ -159,7 +156,46 @@ class InMemorySpreadRepository(SpreadRepository):
         return items
 
 
+class SQLiteSpreadRepository(SpreadRepository):
+    """
+    Заглушка под будущую SQL-реализацию.
+
+    Сейчас просто оборачивает InMemorySpreadRepository, чтобы:
+    - сигнатуры методов были синхронизированы с Protocol;
+    - уже можно было протаскивать этот класс по зависимостям;
+    - позже заменить тело методов на реальные SQL-запросы.
+
+    При желании можно будет принять сюда sqlite3.Connection и переписать
+    внутреннюю реализацию.
+    """
+
+    def __init__(self) -> None:
+        # Пока — in-memory внутри, чтобы всё работало.
+        self._inner = InMemorySpreadRepository()
+
+    def save_spread(self, data: dict[str, Any]) -> int:
+        return self._inner.save_spread(data)
+
+    def get_spread(self, spread_id: int) -> dict[str, Any] | None:
+        return self._inner.get_spread(spread_id)
+
+    def list_spreads(
+        self,
+        user_id: int,
+        offset: int,
+        limit: int,
+    ) -> tuple[int, list[dict[str, Any]]]:
+        return self._inner.list_spreads(user_id=user_id, offset=offset, limit=limit)
+
+    def save_question(self, data: dict[str, Any]) -> int:
+        return self._inner.save_question(data)
+
+    def list_questions(self, spread_id: int) -> list[dict[str, Any]]:
+        return self._inner.list_questions(spread_id)
+
+
 __all__ = [
     "SpreadRepository",
     "InMemorySpreadRepository",
+    "SQLiteSpreadRepository",
 ]

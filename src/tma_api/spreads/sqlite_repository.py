@@ -4,66 +4,93 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from typing import Any, Callable, Iterable, Optional, Tuple, List
+from typing import Any, Dict, List, Tuple
 
 from .repository import SpreadRepository
 
 
 class SQLiteSpreadRepository(SpreadRepository):
     """
-    Реализация SpreadRepository поверх SQLite.
+    Полноценный SQLite-репозиторий для раскладов и вопросов.
 
-    Ожидает фабрику соединений, чтобы не завязываться на конкретный способ
-    инициализации БД (in-memory / файл / пул и т.п.).
+    Ожидает фабрику соединений, чтобы можно было подсовывать разные варианты
+    (in-memory, файл, обёртки и т.п.):
 
-    conn_factory: Callable[[], sqlite3.Connection]
+        conn_factory: Callable[[], sqlite3.Connection]
     """
 
-    def __init__(self, conn_factory: Callable[[], sqlite3.Connection]) -> None:
+    def __init__(self, conn_factory):
         self._conn_factory = conn_factory
+        self._init_schema()
+
+    # -------------------------------------------------------------------------
+    # ИНИЦИАЛИЗАЦИЯ СХЕМЫ
+    # -------------------------------------------------------------------------
+
+    def _init_schema(self) -> None:
+        conn = self._conn_factory()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tma_spreads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    spread_type TEXT NOT NULL,
+                    category TEXT NULL,
+                    user_question TEXT NULL,
+                    cards_json TEXT NOT NULL,
+                    interpretation TEXT NULL,
+                    created_at TEXT NOT NULL
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tma_spread_questions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    spread_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    question TEXT NOT NULL,
+                    answer TEXT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     # -------------------------------------------------------------------------
     # ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
     # -------------------------------------------------------------------------
 
     def _get_connection(self) -> sqlite3.Connection:
+        """
+        Обёртка над фабрикой, чтобы сразу настраивать row_factory.
+        """
         conn = self._conn_factory()
-        # Удобнее работать через dict-like доступ к полям
         conn.row_factory = sqlite3.Row
         return conn
 
-    @staticmethod
-    def _row_to_spread(row: sqlite3.Row) -> dict[str, Any]:
-        """
-        Маппинг строки tma_spreads в dict в формате, удобном сервису.
-
-        ВАЖНО:
-        - user_question из БД → поле "question" в доменной модели;
-        - cards_json (TEXT) → "cards": list[dict].
-        """
-        cards_raw = row["cards_json"] if "cards_json" in row.keys() else "[]"
-        try:
-            cards = json.loads(cards_raw) if cards_raw else []
-        except json.JSONDecodeError:
-            cards = []
-
+    def _row_to_spread(self, row) -> dict[str, Any]:
+        if row is None:
+            return None
         return {
             "id": row["id"],
             "user_id": row["user_id"],
             "spread_type": row["spread_type"],
             "category": row["category"],
-            # в API/моделях поле называется question, а не user_question
-            "question": row["user_question"],
-            "cards": cards,
+            "user_question": row["user_question"],
+            "cards": json.loads(row["cards_json"]),
             "interpretation": row["interpretation"],
             "created_at": row["created_at"],
         }
 
-    @staticmethod
-    def _row_to_question(row: sqlite3.Row) -> dict[str, Any]:
-        """
-        Маппинг строки tma_spread_questions в dict.
-        """
+    def _row_to_question(self, row) -> dict[str, Any]:
+        if row is None:
+            return None
         return {
             "id": row["id"],
             "spread_id": row["spread_id"],
@@ -78,29 +105,59 @@ class SQLiteSpreadRepository(SpreadRepository):
     # SPREADS
     # -------------------------------------------------------------------------
 
-    def save_spread(self, data: dict[str, Any]) -> int:
+    def save_spread(self, data: Dict[str, Any]) -> int:
         """
-        Сохранение расклада в tma_spreads.
+        Вставка или обновление расклада.
 
-        Ожидаемый формат data (минимальный):
-        {
-            "user_id": int,
-            "spread_type": "one" | "three",
-            "category": str | None,
-            "question": str | None,        # вопрос ПЕРЕД раскладом
-            "cards": list[dict],           # JSON-список карт
-            "interpretation": str | None,
-            "created_at": str,             # ISO-строка
-        }
-
-        Возвращает id вставленной записи.
+        Ожидаемые ключи в data:
+        - id (опц.)
+        - user_id
+        - spread_type
+        - category
+        - user_question
+        - cards (list[dict]) → сериализуется в cards_json
+        - interpretation
+        - created_at
         """
+        spread_id = data.get("id")
         cards = data.get("cards") or []
         cards_json = json.dumps(cards, ensure_ascii=False)
 
+        if spread_id and spread_id > 0:
+            # UPDATE-ветка
+            with self._get_connection() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    UPDATE tma_spreads
+                    SET
+                        user_id = ?,
+                        spread_type = ?,
+                        category = ?,
+                        user_question = ?,
+                        cards_json = ?,
+                        interpretation = ?,
+                        created_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        data["user_id"],
+                        data["spread_type"],
+                        data.get("category"),
+                        data.get("user_question"),
+                        cards_json,
+                        data.get("interpretation"),
+                        data["created_at"],
+                        spread_id,
+                    ),
+                )
+                conn.commit()
+            return int(spread_id)
+
+        # INSERT-ветка
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+            cur = conn.cursor()
+            cur.execute(
                 """
                 INSERT INTO tma_spreads (
                     user_id,
@@ -117,24 +174,23 @@ class SQLiteSpreadRepository(SpreadRepository):
                     data["user_id"],
                     data["spread_type"],
                     data.get("category"),
-                    # question из доменной модели кладём в user_question
-                    data.get("question"),
+                    data.get("user_question"),
                     cards_json,
                     data.get("interpretation"),
                     data["created_at"],
                 ),
             )
             conn.commit()
-            spread_id = int(cursor.lastrowid)
-        return spread_id
+            new_id = cur.lastrowid
+        return int(new_id)
 
-    def get_spread(self, spread_id: int) -> Optional[dict[str, Any]]:
+    def get_spread(self, spread_id: int) -> dict[str, Any] | None:
         """
-        Получить один расклад по id.
+        Получить один расклад по id (без проверки user_id — это делает сервис).
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+            cur = conn.cursor()
+            cur.execute(
                 """
                 SELECT
                     id,
@@ -150,7 +206,7 @@ class SQLiteSpreadRepository(SpreadRepository):
                 """,
                 (spread_id,),
             )
-            row = cursor.fetchone()
+            row = cur.fetchone()
 
         if row is None:
             return None
@@ -161,31 +217,25 @@ class SQLiteSpreadRepository(SpreadRepository):
         user_id: int,
         offset: int,
         limit: int,
-    ) -> Tuple[int, List[dict[str, Any]]]:
+    ) -> Tuple[int, List[Dict[str, Any]]]:
         """
         Список раскладов пользователя с пагинацией.
 
-        Возвращает (total, items), где:
-        - total: общее количество раскладов пользователя;
-        - items: список dict'ов, отсортированных по created_at DESC, id DESC.
+        Возвращает (total, items).
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cur = conn.cursor()
 
-            # Считаем общее количество для пагинации
-            cursor.execute(
-                """
-                SELECT COUNT(*) AS cnt
-                FROM tma_spreads
-                WHERE user_id = ?
-                """,
+            # total
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM tma_spreads WHERE user_id = ?",
                 (user_id,),
             )
-            total_row = cursor.fetchone()
+            total_row = cur.fetchone()
             total = int(total_row["cnt"]) if total_row is not None else 0
 
-            # Получаем страницу
-            cursor.execute(
+            # page
+            cur.execute(
                 """
                 SELECT
                     id,
@@ -203,7 +253,7 @@ class SQLiteSpreadRepository(SpreadRepository):
                 """,
                 (user_id, limit, offset),
             )
-            rows = cursor.fetchall()
+            rows = cur.fetchall()
 
         items = [self._row_to_spread(r) for r in rows]
         return total, items
@@ -212,25 +262,54 @@ class SQLiteSpreadRepository(SpreadRepository):
     # QUESTIONS
     # -------------------------------------------------------------------------
 
-    def save_question(self, data: dict[str, Any]) -> int:
+    def save_question(self, data: Dict[str, Any]) -> int:
         """
-        Сохранение уточняющего вопроса по раскладу в tma_spread_questions.
+        Вставка или обновление уточняющего вопроса.
 
-        Ожидаемый формат data (минимальный):
-        {
-            "spread_id": int,
-            "user_id": int,
-            "question": str,
-            "answer": str | None,
-            "status": str,        # "pending" / "ready" / "failed"
-            "created_at": str,    # ISO-строка
-        }
-
-        Возвращает id вставленной записи.
+        Ожидаемые ключи в data:
+        - id (опц.)
+        - spread_id
+        - user_id
+        - question
+        - answer
+        - status
+        - created_at
         """
+        question_id = data.get("id")
+
+        if question_id and question_id > 0:
+            # UPDATE-ветка
+            with self._get_connection() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    UPDATE tma_spread_questions
+                    SET
+                        spread_id = ?,
+                        user_id = ?,
+                        question = ?,
+                        answer = ?,
+                        status = ?,
+                        created_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        data["spread_id"],
+                        data["user_id"],
+                        data["question"],
+                        data.get("answer"),
+                        data["status"],
+                        data["created_at"],
+                        question_id,
+                    ),
+                )
+                conn.commit()
+            return int(question_id)
+
+        # INSERT-ветка
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+            cur = conn.cursor()
+            cur.execute(
                 """
                 INSERT INTO tma_spread_questions (
                     spread_id,
@@ -252,18 +331,16 @@ class SQLiteSpreadRepository(SpreadRepository):
                 ),
             )
             conn.commit()
-            question_id = int(cursor.lastrowid)
-        return question_id
+            new_id = cur.lastrowid
+        return int(new_id)
 
-    def list_questions(self, spread_id: int) -> List[dict[str, Any]]:
+    def list_questions(self, spread_id: int) -> List[Dict[str, Any]]:
         """
-        Список вопросов по конкретному раскладу.
-
-        Возвращает list[dict], отсортированный по created_at ASC, id ASC.
+        Список всех вопросов по раскладу, по возрастанию времени создания.
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+            cur = conn.cursor()
+            cur.execute(
                 """
                 SELECT
                     id,
@@ -279,6 +356,6 @@ class SQLiteSpreadRepository(SpreadRepository):
                 """,
                 (spread_id,),
             )
-            rows = cursor.fetchall()
+            rows = cur.fetchall()
 
         return [self._row_to_question(r) for r in rows]
