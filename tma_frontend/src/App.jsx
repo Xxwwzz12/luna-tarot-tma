@@ -92,12 +92,13 @@ function App() {
     }
   }, [theme]);
 
-  // 2.1 fetchProfile — работаем с APIResponse {ok, data, error}
+  // Загрузка профиля с правильной распаковкой APIResponse
   async function fetchProfile() {
     console.log("[TMA] API GET /profile");
     const res = await apiGet("/profile");
 
     if (res?.ok && res.data) {
+      console.log("[TMA] Raw profile from API:", res.data); // доп. лог структуры профиля
       setProfile(res.data);
       console.log("[TMA] Profile loaded:", {
         user_id: res.data.user_id,
@@ -109,7 +110,7 @@ function App() {
     }
   }
 
-  // 2.2 fetchSpreadsList — тоже через APIResponse
+  // Загрузка истории раскладов с правильной распаковкой APIResponse
   async function fetchSpreadsList(page = 1, limit = 10) {
     console.log(
       "[TMA] API GET /spreads?page=%s&limit=%s",
@@ -203,7 +204,7 @@ function App() {
     });
   }
 
-  // 2.4 handleCreateSpread — payload приходит сверху, POST /spreads работает через {ok, data}
+  // Создание расклада (POST /спreads) — payload приходит из SpreadsScreen
   async function handleCreateSpread(payload) {
     try {
       if (!payload) {
@@ -263,7 +264,7 @@ function App() {
     }
   }
 
-  // 2.3 handleUpdateProfile — тоже через APIResponse
+  // Обновление профиля — через APIResponse { ok, data, error }
   async function handleUpdateProfile(update) {
     try {
       console.log("[TMA] Updating profile with payload:", update);
@@ -370,7 +371,7 @@ function App() {
       case "profile":
         return (
           <ProfileScreen
-            profile={profile}
+            profile={profile} // ВАЖНО: без .data, сюда летит уже res.data
             loading={loading}
             onUpdateProfile={handleUpdateProfile}
             theme={theme}

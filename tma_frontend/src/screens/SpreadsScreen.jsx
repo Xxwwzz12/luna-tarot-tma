@@ -39,36 +39,31 @@ function SpreadsScreen({
     ? selectedCards.length
     : 0;
 
-  const hasQuestion = (question || "").trim().length > 0;
-
-  // S1: временно без проверки selectedCount
+  const trimmedQuestion = (question || "").trim();
   const isCreateDisabled =
     !spreadType ||
-    (spreadType === "three" && !category && !hasQuestion);
+    (spreadType === "three" && !category && !trimmedQuestion);
 
   const handleCreateSpreadClick = () => {
     if (isCreateDisabled) return;
 
-    const trimmedQuestion = (question || "").trim();
+    const trimmed = (question || "").trim();
 
-    // Базовый payload
+    // Формирование payload
     const payload = {
       mode: "auto",
-      spread_type: spreadType || "one", // safety fallback
+      spread_type: spreadType || "one",
       category: null,
       question: null,
     };
 
     if (payload.spread_type === "one") {
-      // Карта дня: фиксированная категория, без user question
       payload.category = "daily";
     } else if (payload.spread_type === "three") {
-      if (trimmedQuestion) {
-        // Пользовательский вопрос вместо категории
-        payload.question = trimmedQuestion;
+      if (trimmed) {
+        payload.question = trimmed;
         payload.category = null;
       } else {
-        // Выбранная категория (love, work и т.д.), с fallback general
         payload.category = category || "general";
       }
     }
@@ -101,7 +96,7 @@ function SpreadsScreen({
 
         <div className="pill-toggle">
           <button
-            type="button"
+            type="button"  // ← важно: кнопка, не submit
             className={
               spreadType === "one" ? "pill-option active" : "pill-option"
             }
@@ -112,7 +107,7 @@ function SpreadsScreen({
           </button>
 
           <button
-            type="button"
+            type="button"  // ← важно
             className={
               spreadType === "three" ? "pill-option active" : "pill-option"
             }
@@ -140,7 +135,7 @@ function SpreadsScreen({
               {CATEGORY_OPTIONS.map((opt) => (
                 <button
                   key={opt.code}
-                  type="button"
+                  type="button"   // ← тоже безопасность
                   className={
                     category === opt.code ? "chip chip-active" : "chip"
                   }
@@ -168,7 +163,7 @@ function SpreadsScreen({
         )}
       </section>
 
-      {/* Выбор карт — режим picker (чисто фронтовый обряд) */}
+      {/* Выбор карт */}
       <section className="card card-cards">
         <h2>Выбор карт</h2>
         <p className="muted">
@@ -191,6 +186,7 @@ function SpreadsScreen({
       {/* Кнопка создания расклада */}
       <section className="card card-actions">
         <button
+          type="button"   // ← ключевая правка ТЗ 5.1
           className="btn-primary"
           disabled={isCreateDisabled}
           onClick={handleCreateSpreadClick}
@@ -204,7 +200,7 @@ function SpreadsScreen({
         </p>
       </section>
 
-      {/* Текущий расклад — режим viewer */}
+      {/* Текущий расклад */}
       <section className="card section spread-current">
         <div className="spread-current-header">
           <p className="section-title">Текущий расклад</p>

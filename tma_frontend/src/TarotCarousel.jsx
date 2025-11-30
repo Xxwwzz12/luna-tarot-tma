@@ -27,13 +27,22 @@ const PICKER_STOP_DELAY_MS = 700;
  *  onSelectCard?: (card: Card, index: number) => void;
  * }} props
  */
-export default function TarotCarousel({
-  mode,
-  selectedCards,
-  pickedCards,
-  maxCards,
-  onSelectCard,
-}) {
+export default function TarotCarousel(props) {
+  const {
+    mode = "viewer",
+    selectedCards = [],
+    pickedCards = [],
+    maxCards = DEFAULT_MAX_CARDS,
+    onSelectCard,
+  } = props;
+
+  console.log("[TMA] TarotCarousel props:", {
+    mode,
+    selectedCards,
+    pickedCards,
+    maxCards,
+  });
+
   const effectiveMode = mode || "viewer";
   const cards = selectedCards || [];
   const effectiveMaxCards =
@@ -52,7 +61,7 @@ export default function TarotCarousel({
     });
   }, [effectiveMode, cards.length]);
 
-  const positionLabels = ["Прошлое", "Настоящее", "Будущее"];
+  const LABELS_3 = ["Прошлое", "Настоящее", "Будущее"];
 
   function handlePrev() {
     if (effectiveMode !== "viewer") return;
@@ -190,7 +199,9 @@ export default function TarotCarousel({
       );
     }
 
-    // Несколько карт — листаем TarotCardView
+    // Несколько карт — листаем TarotCardView (никаких текстовых списков!)
+    const current = cards[currentIndex];
+
     return (
       <div className="tarot-carousel tarot-carousel-viewer">
         <div className="tarot-carousel-main">
@@ -204,13 +215,13 @@ export default function TarotCarousel({
           </button>
 
           <div className="tarot-carousel-card-wrapper">
-            {cards.length > 0 && (
+            {current && (
               <TarotCardView
-                card={cards[currentIndex]}
+                card={current}
                 positionLabel={
-                  cards[currentIndex]?.positionLabel ||
+                  current.positionLabel ||
                   (effectiveMaxCards === 3
-                    ? positionLabels[currentIndex] || null
+                    ? LABELS_3[currentIndex] || null
                     : null)
                 }
               />
