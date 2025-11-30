@@ -8,7 +8,7 @@ const API_BASE_URL =
 
 console.log("[TMA] API_BASE_URL:", API_BASE_URL);
 
-// Сбор заголовков
+// Собираем заголовки: initData или dev-хедеры
 function buildHeaders(hasBody) {
   const headers = {};
 
@@ -16,12 +16,14 @@ function buildHeaders(hasBody) {
     headers["Content-Type"] = "application/json";
   }
 
+  // Пытаемся взять initData из window.__tma
   const initData =
     (window.__tma && (window.__tma.InitData || window.__tma.initData)) || null;
 
   if (initData) {
     headers["X-Telegram-Init-Data"] = initData;
   } else {
+    // DEV-режим: подставляем фиктивного пользователя
     headers["X-Dev-User-Id"] = "123";
     headers["X-Dev-Username"] = "dev_user";
   }
@@ -29,7 +31,7 @@ function buildHeaders(hasBody) {
   return headers;
 }
 
-// Универсальная функция
+// Общий хелпер для всех запросов
 async function apiRequest(method, path, body) {
   const url = API_BASE_URL + path;
   const hasBody = body !== undefined && body !== null;
@@ -50,9 +52,14 @@ async function apiRequest(method, path, body) {
     res = await fetch(url, options);
   } catch (networkError) {
     console.error(`[TMA] Network error ${method} ${path}:`, networkError);
-    return { ok: false, data: null, error: { message: "Network error" } };
+    return {
+      ok: false,
+      data: null,
+      error: { message: "Network error" },
+    };
   }
 
+  // 204 No Content → успех без тела
   if (res.status === 204) {
     return { ok: true, data: null, error: null };
   }
@@ -61,24 +68,39 @@ async function apiRequest(method, path, body) {
   try {
     json = await res.json();
   } catch (e) {
-    console.error(`[TMA] JSON parse error ${method} ${path}:`, e);
-    return { ok: false, data: null, error: { message: "Invalid JSON response" } };
+    console.error(`[TMA] Failed to parse JSON for ${method} ${path}:`, e);
+    return {
+      ok: false,
+      data: null,
+      error: { message: "Invalid JSON response" },
+    };
   }
 
-  // Оборачиваем ответ в единый формат
+  // HTTP-ошибка
   if (!res.ok) {
-    console.error(`[TMA] API error ${res.status} ${method} ${path}:`, json);
-    return { ok: false, data: json?.data || null, error: json?.error || { message: "API error" } };
+    // Если сервер уже вернул APIResponse { ok, data, error } — просто прокидываем
+    if (json && typeof json === "object" && "ok" in json) {
+      return json;
+    }
+
+    // Иначе — формируем fallback-ответ
+    return {
+      ok: false,
+      data: null,
+      error: json?.error || { message: `HTTP ${res.status}` },
+    };
   }
 
-  return {
-    ok: true,
-    data: json,
-    error: null,
-  };
+  // Успех: либо уже APIResponse с полем ok,
+  // либо "голый" JSON, который оборачиваем ОДИН раз
+  if (json && typeof json === "object" && "ok" in json && "data" in json) {
+    return json;
+  }
+
+  return { ok: true, data: json, error: null };
 }
 
-// Обёртки
+// Универсальные обёртки
 export function apiGet(path) {
   return apiRequest("GET", path);
 }
@@ -87,35 +109,36 @@ export function apiPost(path, body) {
   return apiRequest("POST", path, body);
 }
 
-// ====== Специализированные API-функции ======
+// ==== Специализированные API-функции ====
 
 // Профиль
-export async function fetchProfile() {
-  const resp = await apiGet("/profile");
-  return resp; // { ok, data, error }
+export function fetchProfile() {
+  return apiGet("/profile"); // { ok, data, error }
 }
 
-export async function updateProfile(payload) {
-  const resp = await apiPost("/profile", payload);
-  return resp; // { ok, data, error }
+// Можно использовать, если захочешь, но сейчас App.jsx дергает apiPost напрямую
+export function updateProfile(data) {
+  return apiPost("/profile", data); // { ok, data, error }
 }
 
 // История раскладов
-export async function fetchSpreads(page = 1, limit = 10) {
-  const resp = await apiGet(`/spreads?page=${page}&limit=${limit}`);
-  return resp; // { ok, data, error }
+export function fetchSpreads(page = 1, limit = 10) {
+  const search = `?page=${page}&limit=${limit}`;
+  return apiGet("/spreads" + search); // { ok, data, error }
 }
 
-// Авто-расклад
-export async function createAutoSpread(payload) {
+// Создание авто-расклада
+export function createAutoSpread(payload) {
+  // payload: { mode: "auto", spread_type, category?, question? }
   return apiPost("/spreads", payload); // { ok, data, error }
 }
 
 // Вопросы к раскладу
-export async function fetchSpreadQuestions(spreadId) {
+export function fetchSpreadQuestions(spreadId) {
   return apiGet(`/spreads/${spreadId}/questions`); // { ok, data, error }
 }
 
-export async function askSpreadQuestion(spreadId, payload) {
+export function askSpreadQuestion(spreadId, payload) {
+  // payload: { question: string }
   return apiPost(`/spreads/${spreadId}/questions`, payload); // { ok, data, error }
 }

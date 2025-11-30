@@ -46,7 +46,7 @@ function App() {
   // Текущий расклад (detail или элемент из списка)
   // Важно: currentSpread намеренно НЕ сбрасывается при смене вкладок —
   // чтобы можно было вернуться к уже открытому раскладу.
-  // currentSpread.cards — это «истинные» карты расклада, пришедшие с бэка (для viewer-карусели).
+  // currentSpread.cards — это «истинные» карты расклада с бэка (viewer-карусель).
   const [currentSpread, setCurrentSpread] = useState(null);
 
   // Общие статусы
@@ -70,7 +70,7 @@ function App() {
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState(false);
 
-  // Лог initData один раз (чисто диагностический)
+  // Лог initData один раз (диагностика)
   useEffect(() => {
     console.log("InitData in window.__tma:", window.__tma?.initData);
   }, []);
@@ -92,7 +92,7 @@ function App() {
     }
   }, [theme]);
 
-  // Загрузка профиля с правильной распаковкой res.data
+  // 2.1 fetchProfile — работаем с APIResponse {ok, data, error}
   async function fetchProfile() {
     console.log("[TMA] API GET /profile");
     const res = await apiGet("/profile");
@@ -105,10 +105,11 @@ function App() {
       });
     } else {
       console.warn("[TMA] Failed to load profile", res);
+      setProfile(null);
     }
   }
 
-  // Загрузка истории раскладов с правильной распаковкой res.data
+  // 2.2 fetchSpreadsList — тоже через APIResponse
   async function fetchSpreadsList(page = 1, limit = 10) {
     console.log(
       "[TMA] API GET /spreads?page=%s&limit=%s",
@@ -132,12 +133,13 @@ function App() {
 
   // Первичная загрузка профиля и истории раскладов
   useEffect(() => {
-    async function loadInitial() {
+    (async () => {
       try {
         setError(null);
-
-        console.log("[TMA] API_BASE_URL:", import.meta.env.VITE_API_BASE_URL);
-
+        console.log(
+          "[TMA] API_BASE_URL:",
+          import.meta.env.VITE_API_BASE_URL
+        );
         await Promise.all([fetchProfile(), fetchSpreadsList()]);
       } catch (e) {
         console.error("[TMA] Initial load error:", e);
@@ -145,9 +147,7 @@ function App() {
       } finally {
         setInitialLoading(false);
       }
-    }
-
-    loadInitial();
+    })();
   }, []);
 
   // Загрузка вопросов для расклада
@@ -184,7 +184,6 @@ function App() {
     setSelectedCards((prev) => {
       if (!card) return prev;
 
-      // не добавляем дубликаты по id+position (или только id, если position нет)
       const isDuplicate = prev.some(
         (c) =>
           c &&
@@ -196,7 +195,6 @@ function App() {
 
       let next = [...prev, card];
 
-      // ограничиваем по количеству карт
       if (next.length > maxCards) {
         next = next.slice(0, maxCards);
       }
@@ -205,8 +203,7 @@ function App() {
     });
   }
 
-  // Создание расклада (POST /spreads) с правильной распаковкой res.data
-  // Ожидаем, что payload полностью подготовлен в SpreadsScreen и передан сюда.
+  // 2.4 handleCreateSpread — payload приходит сверху, POST /spreads работает через {ok, data}
   async function handleCreateSpread(payload) {
     try {
       if (!payload) {
@@ -226,7 +223,7 @@ function App() {
         setCurrentSpread(detail);
         setActiveTab("spreads");
 
-        // Обновляем историю, если уже загружена
+        // Обновляем историю в памяти, если уже загружена
         setSpreads((prev) => {
           if (!prev || !Array.isArray(prev.items)) return prev;
 
@@ -249,12 +246,10 @@ function App() {
           };
         });
 
-        // подгружаем вопросы уже по созданному раскладу
         await loadQuestionsForSpread(detail.id);
 
-        // сброс вопроса и выбранных карт после успешного создания
         setQuestion("");
-        setSelectedCards([]); // picker очищается после ритуала
+        setSelectedCards([]);
         setNewQuestion("");
       } else {
         console.warn("[TMA] Failed to create spread", res);
@@ -268,7 +263,7 @@ function App() {
     }
   }
 
-  // Обновление профиля — P1 + правильная распаковка res.data
+  // 2.3 handleUpdateProfile — тоже через APIResponse
   async function handleUpdateProfile(update) {
     try {
       console.log("[TMA] Updating profile with payload:", update);
@@ -318,8 +313,6 @@ function App() {
     const found = spreads.items.find((s) => s.id === id);
     if (!found) return;
 
-    // found — это элемент списка (list item), не обязательно полный detail,
-    // но его достаточно, чтобы показать краткий просмотр.
     setCurrentSpread(found);
     setActiveTab("spreads");
   }
@@ -353,7 +346,7 @@ function App() {
             // выбор карт (picker)
             selectedCards={selectedCards}
             onSelectCard={handleSelectCard}
-            // создание расклада (SpreadsScreen формирует payload и передаёт сюда)
+            // создание расклада
             onCreateSpread={handleCreateSpread}
             // Q&A
             questions={questions}

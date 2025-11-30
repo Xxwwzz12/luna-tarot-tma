@@ -39,16 +39,41 @@ function SpreadsScreen({
     ? selectedCards.length
     : 0;
 
-  const trimmedQuestion = (question || "").trim();
+  const hasQuestion = (question || "").trim().length > 0;
 
   // S1: временно без проверки selectedCount
   const isCreateDisabled =
     !spreadType ||
-    (spreadType === "three" && !category && !trimmedQuestion);
+    (spreadType === "three" && !category && !hasQuestion);
 
   const handleCreateSpreadClick = () => {
     if (isCreateDisabled) return;
-    onCreateSpread?.();
+
+    const trimmedQuestion = (question || "").trim();
+
+    // Базовый payload
+    const payload = {
+      mode: "auto",
+      spread_type: spreadType || "one", // safety fallback
+      category: null,
+      question: null,
+    };
+
+    if (payload.spread_type === "one") {
+      // Карта дня: фиксированная категория, без user question
+      payload.category = "daily";
+    } else if (payload.spread_type === "three") {
+      if (trimmedQuestion) {
+        // Пользовательский вопрос вместо категории
+        payload.question = trimmedQuestion;
+        payload.category = null;
+      } else {
+        // Выбранная категория (love, work и т.д.), с fallback general
+        payload.category = category || "general";
+      }
+    }
+
+    onCreateSpread?.(payload);
   };
 
   const renderCardsSummary = () => {
@@ -143,7 +168,7 @@ function SpreadsScreen({
         )}
       </section>
 
-      {/* Выбор карт — режим picker */}
+      {/* Выбор карт — режим picker (чисто фронтовый обряд) */}
       <section className="card card-cards">
         <h2>Выбор карт</h2>
         <p className="muted">
