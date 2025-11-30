@@ -1,301 +1,159 @@
 // tma_frontend/src/TarotCarousel.jsx
-import React, { useState, useRef, useEffect } from "react";
-import TarotCardView from "./components/TarotCardView";
+import React, { useState, useEffect } from "react";
+import TarotCardView from "./components/TarotCardView.jsx";
 
-const TOTAL_CARDS = 78;
-const SWIPE_THRESHOLD = 40; // px для старта спина
-const MAX_SPIN_STEPS = 18;  // сколько "шагов" прокрутки
-const BASE_DELAY = 60;      // стартовая задержка между шагами (меньше = быстрее)
-const DELAY_GROWTH = 22;    // насколько каждый шаг замедляется
+const DEFAULT_MAX_CARDS = 3;
 
+/**
+ * @typedef {Object} Card
+ * @property {string|number} id
+ * @property {string} name
+ * @property {string|null} [suit]
+ * @property {string} arcana
+ * @property {string|null} [image_url]
+ * @property {boolean} [is_reversed]
+ * @property {string} [positionLabel]
+ */
+
+/**
+ * @param {{
+ *  selectedCards?: Card[];
+ *  maxCards?: number;
+ *  onSelectCard?: (card: Card, index: number) => void;
+ * }} props
+ */
 export default function TarotCarousel({
-  selectedCount,
+  selectedCards,
   maxCards,
   onSelectCard,
-  selectedCards = [],
 }) {
-  const [index, setIndex] = useState(0);
-  const [dragStartX, setDragStartX] = useState(null);
-  const [dragDeltaX, setDragDeltaX] = useState(0);
-  const [isSpinning, setIsSpinning] = useState(false);
-  const [direction, setDirection] = useState(1);
-  const [flipState, setFlipState] = useState("idle"); // idle | flipping
+  const cards = selectedCards ?? [];
+  const effectiveMaxCards = typeof maxCards === "number" ? maxCards : DEFAULT_MAX_CARDS;
 
-  const spinTimerRef = useRef(null);
+  // Если карт нет — ничего не рендерим
+  if (!cards || cards.length === 0) {
+    return null;
+  }
 
-  // Очистка таймера при размонтировании
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Держим currentIndex в пределах доступного диапазона
   useEffect(() => {
-    return () => {
-      if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
-    };
-  }, []);
-
-  const stepOnce = (dir) => {
-    setIndex((prev) => {
-      let next = prev + dir;
-      if (next < 0) next = TOTAL_CARDS - 1;
-      if (next >= TOTAL_CARDS) next = 0;
-      return next;
+    if (cards.length === 0) return;
+    setCurrentIndex((prev) => {
+      if (prev < 0) return 0;
+      if (prev >= cards.length) return cards.length - 1;
+      return prev;
     });
-  };
+  }, [cards.length]);
 
-  const startSpin = (dir) => {
-    stopSpin(false);
-    setDirection(dir);
-    setIsSpinning(true);
+  const isOneModeFinal = effectiveMaxCards === 1 && cards.length === 1;
+  const isMultiMode = !isOneModeFinal && cards.length >= 1;
 
-    const spinStep = (step) => {
-      if (step >= MAX_SPIN_STEPS) {
-        setIsSpinning(false);
-        spinTimerRef.current = null;
-        return;
+  const resolvePositionLabel = (index, card) => {
+    if (card && card.positionLabel) return card.positionLabel;
+
+    if (effectiveMaxCards === 3) {
+      switch (index) {
+        case 0:
+          return "Прошлое";
+        case 1:
+          return "Настоящее";
+        case 2:
+          return "Будущее";
+        default:
+          return null;
       }
-
-      stepOnce(dir);
-
-      const delay = BASE_DELAY + step * DELAY_GROWTH;
-      spinTimerRef.current = setTimeout(
-        () => spinStep(step + 1),
-        delay
-      );
-    };
-
-    spinStep(0);
-  };
-
-  const stopSpin = (withSelect = false) => {
-    if (spinTimerRef.current) {
-      clearTimeout(spinTimerRef.current);
-      spinTimerRef.current = null;
     }
-    setIsSpinning(false);
-    if (withSelect) handleChoose();
+
+    return null;
   };
 
   const handlePrev = () => {
-    if (!isSpinning) stepOnce(-1);
+    if (cards.length <= 1) return;
+    setCurrentIndex((prev) => (prev - 1 + cards.length) % cards.length);
   };
 
   const handleNext = () => {
-    if (!isSpinning) stepOnce(1);
+    if (cards.length <= 1) return;
+    setCurrentIndex((prev) => (prev + 1) % cards.length);
   };
 
-  const handleChoose = () => {
-    if (selectedCount >= maxCards) return;
-
-    onSelectCard(index);
-
-    setFlipState("flipping");
-    setTimeout(() => setFlipState("idle"), 600);
+  const handleCardClick = () => {
+    if (typeof onSelectCard !== "function") return;
+    const card = cards[currentIndex];
+    onSelectCard(card, currentIndex);
   };
 
-  const remaining = Math.max(maxCards - selectedCount, 0);
+  // --- Финальный режим: одна карта (Карта дня) ---
+  if (isOneModeFinal) {
+    const card = cards[0];
+    const label = card.positionLabel ?? "Карта дня";
 
-  // 👉 Свайпы ---------------------------------------------------------
+    return (
+      <div className="tarot-carousel tarot-carousel-final">
+        <div className="tarot-carousel-header">
+          <div className="tarot-carousel-title">Ваша карта дня</div>
+        </div>
 
-  const startDrag = (clientX) => {
-    if (isSpinning) return;
-    setDragStartX(clientX);
-    setDragDeltaX(0);
-  };
+        <div className="tarot-carousel-single-card">
+          <TarotCardView card={card} positionLabel={label} />
+        </div>
+      </div>
+    );
+  }
 
-  const moveDrag = (clientX) => {
-    if (dragStartX == null) return;
-    setDragDeltaX(clientX - dragStartX);
-  };
-
-  const endDrag = () => {
-    if (dragStartX == null) return;
-
-    const delta = dragDeltaX;
-
-    if (Math.abs(delta) > SWIPE_THRESHOLD) {
-      const dir = delta < 0 ? 1 : -1;
-      startSpin(dir);
-    }
-
-    setDragStartX(null);
-    setDragDeltaX(0);
-  };
-
-  const handleMouseDown = (e) => {
-    e.preventDefault();
-    startDrag(e.clientX);
-  };
-
-  const handleMouseMove = (e) => {
-    if (dragStartX == null) return;
-    e.preventDefault();
-    moveDrag(e.clientX);
-  };
-
-  const handleMouseUp = () => endDrag();
-  const handleMouseLeave = () => endDrag();
-
-  const handleTouchStart = (e) => {
-    if (e.touches?.length) startDrag(e.touches[0].clientX);
-  };
-
-  const handleTouchMove = (e) => {
-    if (e.touches?.length) moveDrag(e.touches[0].clientX);
-  };
-
-  const handleTouchEnd = () => endDrag();
-
-  // 👉 Визуальные эффекты -------------------------------------------------
-
-  const isDragging = dragStartX != null;
-
-  const dragStyle = isDragging
-    ? {
-        transform: `translateX(${dragDeltaX * 0.3}px) rotate(${dragDeltaX * 0.02}deg)`,
-        transition: "none",
-      }
-    : isSpinning
-    ? {
-        transform: `rotate(${direction > 0 ? 2 : -2}deg)`,
-        transition: "transform 0.12s ease-out",
-      }
-    : {
-        transform: "none",
-        transition: "transform 0.12s ease-out",
-      };
-
-  const mainCardClasses = [
-    "tarot-card",
-    "main",
-    isDragging ? "dragging" : "",
-    isSpinning ? "spinning" : "",
-    flipState === "flipping" ? "flipping" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  // 👉 Финальный режим --------------------------------------------------
-
-  const isOneMode = maxCards === 1;
-  const isThreeMode = maxCards === 3;
-
-  const hasOneSelected = isOneMode && selectedCards.length === 1;
-  const hasThreeSelected = isThreeMode && selectedCards.length === 3;
-
-  const hasFullSelection = hasOneSelected || hasThreeSelected;
+  // --- Режим просмотра нескольких карт (3 карты и любые другие наборы) ---
+  const currentCard = cards[currentIndex];
+  const currentLabel = resolvePositionLabel(currentIndex, currentCard);
 
   return (
-    <div className="card tarot-carousel">
-      <p className="section-title">Выбор карт</p>
+    <div className="tarot-carousel">
+      <div className="tarot-carousel-main">
+        <button
+          type="button"
+          className="tarot-carousel-nav tarot-carousel-nav-prev"
+          onClick={handlePrev}
+          disabled={cards.length <= 1}
+        >
+          ‹
+        </button>
 
-      <p className="muted small">
-        {hasFullSelection
-          ? "Ваши карты:"
-          : "Свайпните по карте, чтобы раскрутить колоду. Нажмите на карту, чтобы остановить и выбрать её."}
-      </p>
+        <div
+          className="tarot-carousel-card-wrapper"
+          onClick={handleCardClick}
+        >
+          <TarotCardView
+            card={currentCard}
+            positionLabel={currentLabel}
+          />
+        </div>
 
-      <div className="tarot-carousel-shell">
-        {/* ---- ФИНАЛЬНЫЙ РЕЖИМ ---- */}
-        {hasOneSelected && (
-          <div className="tarot-result-stack one">
-            <TarotCardView
-              card={selectedCards[0]}
-              positionLabel="Карта дня"
-            />
-          </div>
-        )}
-
-        {hasThreeSelected && (
-          <div className="tarot-result-stack three">
-            <TarotCardView
-              card={selectedCards[0]}
-              positionLabel="Прошлое"
-            />
-            <TarotCardView
-              card={selectedCards[1]}
-              positionLabel="Настоящее"
-            />
-            <TarotCardView
-              card={selectedCards[2]}
-              positionLabel="Будущее"
-            />
-          </div>
-        )}
-
-        {/* ---- Пока выбор не завершён → старое поведение ---- */}
-        {!hasFullSelection && (
-          <>
-            <div className="tarot-stack">
-              <div className="tarot-card ghost ghost-left">
-                <span className="tarot-card-back">🜁</span>
-              </div>
-
-              <div
-                className={mainCardClasses}
-                style={dragStyle}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseLeave}
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-                onClick={() => {
-                  if (isSpinning) stopSpin(true);
-                  else handleChoose();
-                }}
-              >
-                <span className="tarot-card-back">
-                  {flipState === "flipping" ? "✨" : "🜁"}
-                </span>
-              </div>
-
-              <div className="tarot-card ghost ghost-right">
-                <span className="tarot-card-back">🜁</span>
-              </div>
-            </div>
-
-            <div className="carousel-controls">
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={handlePrev}
-                disabled={isSpinning}
-              >
-                ◀
-              </button>
-              <span className="muted small">
-                Карта #{index + 1} из {TOTAL_CARDS}
-              </span>
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={handleNext}
-                disabled={isSpinning}
-              >
-                ▶
-              </button>
-            </div>
-
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() =>
-                isSpinning ? stopSpin(true) : handleChoose()
-              }
-              disabled={selectedCount >= maxCards}
-            >
-              {selectedCount >= maxCards
-                ? "Лимит карт выбран"
-                : isSpinning
-                ? "Поймать карту"
-                : "Выбрать карту"}
-            </button>
-
-            <p className="muted small center">
-              Выбрано {selectedCount} / {maxCards}.{" "}
-              {remaining > 0 && `Осталось выбрать: ${remaining}.`}
-            </p>
-          </>
-        )}
+        <button
+          type="button"
+          className="tarot-carousel-nav tarot-carousel-nav-next"
+          onClick={handleNext}
+          disabled={cards.length <= 1}
+        >
+          ›
+        </button>
       </div>
+
+      {cards.length > 1 && (
+        <div className="tarot-carousel-dots">
+          {cards.map((_, index) => (
+            <button
+              key={index}
+              type="button"
+              className={
+                "tarot-carousel-dot" +
+                (index === currentIndex ? " tarot-carousel-dot-active" : "")
+              }
+              onClick={() => setCurrentIndex(index)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
