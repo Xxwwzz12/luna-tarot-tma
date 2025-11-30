@@ -15,13 +15,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Импорт конфигурации (безопасный)
+# Импорт конфигурации для SQLite user-DB (ОТДЕЛЬНО от общего DATABASE_URL/Postgres)
+USER_DB_URL: str
 try:
-    from .config import DATABASE_URL
+    # Предпочитаем явный USER_DB_URL из config.py
+    from .config import USER_DB_URL as _CFG_USER_DB_URL
+    USER_DB_URL = _CFG_USER_DB_URL
 except ImportError:
-    # Конфига нет (например, на Render) — читаем из ENV или ставим дефолт
-    import os
-    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/luna_users.db")
+    # Конфига может не быть (например, на Render) — читаем из ENV или ставим дефолт
+    USER_DB_URL = os.getenv("USER_DB_URL", "sqlite:///data/luna_users.db")
 
 # --- TMA-friendly connection factory ---------------------------------------
 
@@ -53,7 +55,27 @@ def get_connection() -> sqlite3.Connection:
 class UserDatabase:
     def __init__(self):
         """Инициализация класса базы данных - автоматически вызывает инициализацию БД"""
-        self.db_path = DATABASE_URL.replace('sqlite:///', '')
+
+        # Разбираем USER_DB_URL только для SQLite, не трогая глобальный DATABASE_URL (Postgres)
+        raw_url = USER_DB_URL
+
+        if raw_url.startswith("sqlite:///"):
+            db_path = raw_url.replace("sqlite:///", "")
+        else:
+            # На всякий случай: если дали просто путь или что-то без sqlite:///
+            db_path = raw_url
+
+        self.db_path = db_path
+
+        # Гарантируем существование каталога под файл БД
+        try:
+            Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.error("❌ Не удалось создать каталог для БД %s: %s", self.db_path, e)
+            # продолжаем, sqlite всё равно попробует открыть/создать файл
+
+        logger.info("🗄️ UserDatabase: using SQLite DB at %s", self.db_path)
+
         # Создаем подключение для миграций
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.cursor = self.conn.cursor()
