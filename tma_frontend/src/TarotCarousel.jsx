@@ -16,6 +16,11 @@ const DEFAULT_MAX_CARDS = 3;
  */
 
 /**
+ * Режим сейчас фактически = "result":
+ * - показываем уже готовые карты расклада (1 или несколько),
+ * - без спинов/свайпов/выбора,
+ * - используется в SpreadsScreen для отображения currentSpread.cards.
+ *
  * @param {{
  *  selectedCards?: Card[];
  *  maxCards?: number;
@@ -28,7 +33,8 @@ export default function TarotCarousel({
   onSelectCard,
 }) {
   const cards = selectedCards ?? [];
-  const effectiveMaxCards = typeof maxCards === "number" ? maxCards : DEFAULT_MAX_CARDS;
+  const effectiveMaxCards =
+    typeof maxCards === "number" ? maxCards : DEFAULT_MAX_CARDS;
 
   // Если карт нет — ничего не рендерим
   if (!cards || cards.length === 0) {
@@ -48,7 +54,6 @@ export default function TarotCarousel({
   }, [cards.length]);
 
   const isOneModeFinal = effectiveMaxCards === 1 && cards.length === 1;
-  const isMultiMode = !isOneModeFinal && cards.length >= 1;
 
   const resolvePositionLabel = (index, card) => {
     if (card && card.positionLabel) return card.positionLabel;
@@ -71,12 +76,16 @@ export default function TarotCarousel({
 
   const handlePrev = () => {
     if (cards.length <= 1) return;
-    setCurrentIndex((prev) => (prev - 1 + cards.length) % cards.length);
+    setCurrentIndex(
+      (prev) => (prev - 1 + cards.length) % cards.length
+    );
   };
 
   const handleNext = () => {
     if (cards.length <= 1) return;
-    setCurrentIndex((prev) => (prev + 1) % cards.length);
+    setCurrentIndex(
+      (prev) => (prev + 1) % cards.length
+    );
   };
 
   const handleCardClick = () => {
@@ -103,7 +112,7 @@ export default function TarotCarousel({
     );
   }
 
-  // --- Режим просмотра нескольких карт (3 карты и любые другие наборы) ---
+  // --- Режим просмотра нескольких карт ---
   const currentCard = cards[currentIndex];
   const currentLabel = resolvePositionLabel(currentIndex, currentCard);
 
@@ -147,7 +156,9 @@ export default function TarotCarousel({
               type="button"
               className={
                 "tarot-carousel-dot" +
-                (index === currentIndex ? " tarot-carousel-dot-active" : "")
+                (index === currentIndex
+                  ? " tarot-carousel-dot-active"
+                  : "")
               }
               onClick={() => setCurrentIndex(index)}
             />

@@ -39,9 +39,15 @@ function App() {
   // Активная вкладка (нижняя навигация)
   const [activeTab, setActiveTab] = useState("home"); // "home" | "spreads" | "history" | "profile"
 
-  // Профиль, расклады, текущий расклад
+  // Профиль пользователя
   const [profile, setProfile] = useState(null);
+
+  // История раскладов (список)
   const [spreads, setSpreads] = useState({ items: [] });
+
+  // Текущий расклад (detail или элемент из списка)
+  // Важно: currentSpread намеренно НЕ сбрасывается при смене вкладок —
+  // чтобы можно было вернуться к уже открытому раскладу.
   const [currentSpread, setCurrentSpread] = useState(null);
 
   // Общие статусы
@@ -55,7 +61,9 @@ function App() {
   const [question, setQuestion] = useState("");
 
   // Выбранные карты (индексы 0–77)
-  const [selectedCards, setSelectedCards] = useState([]); // массив индексов
+  // Вариант A: это чисто фронтовый "ритуал" выбора, backend сам выдаёт карты.
+  // POST /spreads не зависит от этого массива, он нужен только для UX и анимации.
+  const [selectedCards, setSelectedCards] = useState([]);
 
   // Q&A под раскладом
   const [questions, setQuestions] = useState([]);
@@ -63,7 +71,7 @@ function App() {
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState("");
 
-  // Лог initData один раз
+  // Лог initData один раз (чисто диагностический)
   useEffect(() => {
     console.log("InitData in window.__tma:", window.__tma?.initData);
   }, []);
@@ -91,21 +99,35 @@ function App() {
       try {
         setError(null);
 
+        console.log("[TMA] API_BASE_URL:", import.meta.env.VITE_API_BASE_URL);
+
         const [profileData, spreadsData] = await Promise.all([
           fetchProfile(),
           fetchSpreads(),
         ]);
 
+        console.log("[TMA] Profile loaded:", {
+          user_id: profileData?.user_id,
+          username: profileData?.username,
+        });
+
         setProfile(profileData);
 
         if (spreadsData && Array.isArray(spreadsData.items)) {
-          // если бек вернёт ещё total_items и т.п., их можно сохранить
+          console.log(
+            "[TMA] Spreads list loaded:",
+            spreadsData.items.length,
+            "items"
+          );
           setSpreads({
             items: spreadsData.items,
             total_items: spreadsData.total_items,
           });
+        } else {
+          console.log("[TMA] Spreads list is empty or invalid.");
         }
       } catch (e) {
+        console.error("[TMA] Initial load error:", e);
         setError(e.message || "Ошибка загрузки");
       } finally {
         setInitialLoading(false);
@@ -140,7 +162,7 @@ function App() {
     setSelectedCards([]);
   }
 
-  // Выбор карты (индекс 0–77)
+  // Выбор карты (индекс 0–77) — чисто фронтовый UX
   function handleSelectCard(index) {
     setSelectedCards((prev) => {
       const maxCards = spreadType === "one" ? 1 : 3;
@@ -150,19 +172,24 @@ function App() {
     });
   }
 
-  // Создание расклада (обобщённый handleCreateSpread)
-  async function handleCreateSpread() {
+  // Создание расклада (handleCreateSpread)
+  // СИНХРОНИЗАЦИЯ КОНТРАКТА:
+  // - Если SpreadsScreen вызывает onCreateSpread(payloadFromChild),
+  //   используем этот payload.
+  // - Если вызывается без аргумента, собираем payload из стейта App (старое поведение).
+  async function handleCreateSpread(payloadFromChild) {
     try {
       setLoading(true);
       setError(null);
 
-      const payload = {
+      const basePayload = {
         spread_type: spreadType,
         category,
-        mode: "auto", // пока авто, позже можно разделить на auto/manual
+        mode: "auto",
         question: question.trim() || null,
-        // selected_cards: selectedCards, // можно добавить позже, когда бек будет готов
       };
+
+      const payload = payloadFromChild ?? basePayload;
 
       const detail = await createAutoSpread(payload);
 
@@ -175,7 +202,7 @@ function App() {
       setCurrentSpread(detailWithQuestion);
       setActiveTab("spreads");
 
-      // Обновляем историю (вариант 1 из ТЗ A.1)
+      // Обновляем историю
       setSpreads((prev) => {
         if (!prev || !Array.isArray(prev.items)) return prev;
 
@@ -212,6 +239,7 @@ function App() {
       setSelectedCards([]);
       setNewQuestion("");
     } catch (err) {
+      console.error("Create spread error:", err);
       setError(err.message || "Не удалось создать расклад");
     } finally {
       setLoading(false);
@@ -231,6 +259,7 @@ function App() {
       setError("Профиль сохранён");
       setTimeout(() => setError(null), 2000);
     } catch (err) {
+      console.error("Update profile error:", err);
       setError(err.message || "Не удалось обновить профиль");
     } finally {
       setLoading(false);
@@ -272,7 +301,8 @@ function App() {
     const found = spreads.items.find((s) => s.id === id);
     if (!found) return;
 
-    // found — это элемент списка, не обязательно полный detail, но для просмотра хватит
+    // found — это элемент списка (list item), не обязательно полный detail,
+    // но его достаточно, чтобы показать краткий просмотр.
     setCurrentSpread(found);
     setActiveTab("spreads");
   }
@@ -303,10 +333,10 @@ function App() {
             onCategoryChange={setCategory}
             question={question}
             onQuestionChange={setQuestion}
-            // выбор карт
+            // выбор карт (фронтовый обряд)
             selectedCards={selectedCards}
             onSelectCard={handleSelectCard}
-            // создание расклада
+            // создание расклада (payload может прийти из SpreadsScreen)
             onCreateSpread={handleCreateSpread}
             // Q&A
             questions={questions}

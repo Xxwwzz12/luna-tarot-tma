@@ -20,9 +20,16 @@ from .repository import (
     InMemorySpreadRepository,
     SQLiteSpreadRepository,
 )
+from .postgres_repository import PostgresSpreadRepository  # ✅ новый импорт
 from ..tarot_deck import draw_random_cards  # обновлённый draw_random_cards
 
 logger = logging.getLogger(__name__)
+
+# ВАЖНО:
+# Этот модуль НЕ выполняет никакой очистки таблиц/данных при старте.
+# Вся долговременная история раскладов/вопросов хранится в репозитории
+# (InMemorySpreadRepository — только на время жизни процесса, SQLite/Postgres — в БД).
+# Никаких DROP/DELETE при инициализации здесь нет.
 
 # Интерактивные сессии остаются чисто in-memory
 _SESSIONS: Dict[str, Dict[str, Any]] = {}
@@ -180,7 +187,7 @@ async def _generate_ai_answer(
     question: str,
     user_ctx: UserContext,
 ) -> Optional[str]:
-    """Async-обёртка поверх AIInterpreter.generate_question_answer (пока не используется)."""
+    """Async-обёртка поверх AIInterpreter.generate_question_answer (для будущего pipeline)."""
     interpreter = _get_ai_interpreter()
     if not interpreter:
         return None
@@ -226,34 +233,59 @@ def _spread_has_questions(repo: SpreadRepository, spread: Dict[str, Any]) -> boo
 class SpreadService:
     def __init__(self, repo: SpreadRepository | None = None):
         """
-        ТЗ 23.4 — финальный переключатель in-memory → SQLite.
+        Финальный переключатель in-memory → SQLite → Postgres через репозитории.
 
         Приоритет:
-        - если явно передан repo — используем его;
-        - иначе смотрим TMA_USE_SQLITE:
-          - "1" → пытаемся создать SQLiteSpreadRepository(get_connection);
-          - иначе → InMemorySpreadRepository().
+        - если явно передан repo — используем его как есть;
+        - иначе читаем TMA_DB_BACKEND / DATABASE_URL и выбираем:
+          - backend == "postgres" и есть DATABASE_URL → PostgresSpreadRepository;
+          - backend == "sqlite" → SQLiteSpreadRepository(get_connection);
+          - иначе → InMemorySpreadRepository.
+
+        Плавный fallback:
+        - если Postgres не поднялся → пробуем SQLite, затем память;
+        - если SQLite не поднялся → память.
         """
         if repo is not None:
             self._repo = repo
-        else:
-            use_sqlite = os.getenv("TMA_USE_SQLITE", "0") == "1"
-            if use_sqlite:
-                try:
-                    from src.user_database import get_connection  # type: ignore
+            return
 
-                    self._repo = SQLiteSpreadRepository(get_connection)
-                    logger.info("SpreadService: using SQLiteSpreadRepository")
-                except Exception:
-                    logger.exception(
-                        "Failed to init SQLiteSpreadRepository, falling back to InMemorySpreadRepository"
-                    )
-                    self._repo = InMemorySpreadRepository()
-            else:
-                logger.info("SpreadService: using InMemorySpreadRepository")
-                self._repo = InMemorySpreadRepository()
+        backend = os.getenv("TMA_DB_BACKEND", "").strip().lower()
+        db_url = os.getenv("DATABASE_URL", "").strip()
 
-    # T2.1 — _build_cards как метод сервиса, работающий с обновлённой колодой
+        # 1) Попытка использовать Postgres
+        if backend == "postgres" and db_url:
+            try:
+                self._repo = PostgresSpreadRepository()
+                logger.info(
+                    "SpreadService: using PostgresSpreadRepository (DATABASE_URL=%s)",
+                    db_url,
+                )
+                return
+            except Exception:
+                logger.exception(
+                    "Failed to init PostgresSpreadRepository, falling back to SQLite or memory"
+                )
+                # дальше пробуем SQLite → память
+
+        # 2) Попытка использовать SQLite (явный backend == "sqlite")
+        if backend == "sqlite":
+            try:
+                from src.user_database import get_connection  # type: ignore
+
+                self._repo = SQLiteSpreadRepository(get_connection)
+                logger.info("SpreadService: using SQLiteSpreadRepository")
+                return
+            except Exception:
+                logger.exception(
+                    "Failed to init SQLiteSpreadRepository, falling back to InMemorySpreadRepository"
+                )
+
+        # 3) Финальный fallback — in-memory
+        logger.info("SpreadService: using InMemorySpreadRepository")
+        self._repo = InMemorySpreadRepository()
+
+    # _build_cards: сервер сам выбирает карты из своей колоды.
     def _build_cards(self, spread_type: str) -> List[Dict[str, Any]]:
         """
         Используем обновлённый draw_random_cards и приводим
@@ -261,6 +293,12 @@ class SpreadService:
         - в репозиторий (_repo.save_spread),
         - в AI,
         - в сборку CardModel.
+
+        Контракт с фронтом:
+        - карты выбираются ТОЛЬКО на бэке, на основе внутренней колоды;
+        - фронтовая карусель — чистый визуальный/ритуальный элемент;
+        - POST /spreads не зависит от того, какие карты пользователь «щёлкал» на фронте
+          (до будущих доработок интерактива).
         """
         if spread_type == "one":
             count = 1
@@ -297,9 +335,17 @@ class SpreadService:
         """
         Создать авто-расклад, вызвать AI и сохранить интерпретацию через self._repo.
 
-        - question здесь — «вопрос до расклада» (user_question);
-        - для spread_type == "one" считаем это картой дня:
-          category="daily", user_question=None.
+        Контракт с фронтом:
+        - backend САМ выбирает карты из своей колоды (через _build_cards);
+        - фронтовая карусель — визуальный ритуал, не влияющий на результат POST /spreads;
+        - структура запроса от фронта не содержит выбранных карт, только параметры расклада
+          (spread_type, category/question);
+        - в ответ приходит уже готовый расклад с картами и интерпретацией.
+
+        question здесь — «вопрос до расклада» (user_question).
+        Для spread_type == "one" считаем это «картой дня»:
+        - category принудительно "daily";
+        - user_question игнорируется (None).
         """
         user_ctx = _get_user_ctx(user_id)
 
@@ -312,7 +358,7 @@ class SpreadService:
             normalized_category = "daily"
             user_question = None
 
-        # T2.2 — явная обработка ошибок колоды
+        # Явная обработка ошибок колоды
         try:
             cards_payload = self._build_cards(spread_type)
         except Exception as e:
@@ -358,9 +404,19 @@ class SpreadService:
             "created_at": created_at,
         }
 
-        # 4.2 — сохраняем через репозиторий и получаем id
+        # Сохраняем через репозиторий и получаем id
         spread_id = self._repo.save_spread(record)
         record["id"] = spread_id  # на случай, если repo сам сгенерировал id
+
+        # DEV-лог для дебага истории
+        logger.info(
+            "Created spread: user_id=%s spread_id=%s spread_type=%s category=%s created_at=%s",
+            user_id,
+            spread_id,
+            spread_type,
+            effective_category,
+            created_at,
+        )
 
         # Для ответа API собираем CardModel (минимальный вид)
         cards_models = [
@@ -382,7 +438,7 @@ class SpreadService:
             question=user_question,
         )
 
-    # Интерактивные сессии — остаются in-memory
+    # Интерактивные сессии — остаются in-memory и не связаны с репозиторием
     def create_interactive_session(self, user_id: int, spread_type: str, category: str):
         session_id = str(uuid4())
         total = 1 if spread_type == "one" else 3
@@ -458,8 +514,14 @@ class SpreadService:
         limit: int = 10,
     ) -> Dict[str, Any]:
         """
-        4.3 — список через repo.list_spreads(user_id, offset, limit),
-        а пагинация/модели строятся в сервисе.
+        Возвращает страницу истории раскладов пользователя.
+
+        Источник данных — self._repo.list_spreads(user_id, offset, limit),
+        сервис добавляет только:
+        - пагинацию;
+        - short_preview (первые 140 символов интерпретации);
+        - флаг has_questions (по user_question + вопросам в repo);
+        - "нормализованную" category для карты дня (daily).
         """
         if limit <= 0:
             limit = 10
@@ -515,7 +577,11 @@ class SpreadService:
     # Детальный расклад
     def get_spread(self, user_id: int, spread_id: int) -> SpreadDetail:
         """
-        4.4 — только через repo.get_spread(spread_id) и проверку владельца.
+        Возвращает детальный расклад по id.
+
+        Только через repo.get_spread(spread_id) и с проверкой владельца:
+        - если расклад не найден или принадлежит другому пользователю —
+          кидаем ValueError("spread_not_found"), роутер превратит в 404/400.
         """
         raw = self._repo.get_spread(spread_id)
         if not raw or raw.get("user_id") != user_id:
@@ -549,7 +615,7 @@ class SpreadService:
         question: str,
     ) -> SpreadQuestionModel:
         """
-        4.5 — Вопрос к УЖЕ существующему раскладу.
+        Вопрос к УЖЕ существующему раскладу.
 
         Здесь question — уточнение к раскладу (не вопрос до расклада).
         Ответ и статус на этом этапе: answer=None, status="pending".
@@ -576,8 +642,10 @@ class SpreadService:
 
     def get_spread_questions(self, user_id: int, spread_id: int) -> SpreadQuestionsList:
         """
-        4.5 — сначала убеждаемся, что расклад не чужой,
-        затем берём список вопросов через repo.list_questions(spread_id).
+        Список вопросов по раскладу.
+
+        Сначала убеждаемся, что расклад принадлежит пользователю,
+        затем берём вопросы через repo.list_questions(spread_id).
         """
         raw_spread = self._repo.get_spread(spread_id)
         if not raw_spread or raw_spread.get("user_id") != user_id:

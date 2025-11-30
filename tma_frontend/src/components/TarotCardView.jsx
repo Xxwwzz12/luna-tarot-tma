@@ -5,10 +5,14 @@ import React from "react";
 export default function TarotCardView({ card, positionLabel }) {
   if (!card) return null;
 
-  const isReversed = !!card.is_reversed;
+  const isReversed = !!card?.is_reversed;
 
-  // Если нет card.image_url → используем заглушку (будет добавлена позже)
+  // Если image_url отсутствует → fallback-рубашка
   const imageSrc = card.image_url || "/images/tarot/back.svg";
+
+  // Логика классов — строго по контракту
+  const imageClassName =
+    "tarot-card-image" + (isReversed ? " tarot-card-image-reversed" : "");
 
   return (
     <div className="tarot-card-view">
@@ -22,10 +26,7 @@ export default function TarotCardView({ card, positionLabel }) {
         <img
           src={imageSrc}
           alt={card.name || "Таро карта"}
-          className={
-            "tarot-card-image" +
-            (isReversed ? " tarot-card-image-reversed" : "")
-          }
+          className={imageClassName}
         />
       </div>
 

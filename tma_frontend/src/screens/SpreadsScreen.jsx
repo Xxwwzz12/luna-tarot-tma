@@ -47,32 +47,8 @@ function SpreadsScreen({
 
   const handleCreateSpreadClick = () => {
     if (isCreateDisabled) return;
-
-    // 🔧 FIX — удалены TypeScript аннотации
-    let payloadCategory = null;
-    let payloadQuestion = null;
-
-    if (spreadType === "one") {
-      payloadCategory = null;
-      payloadQuestion = null;
-    } else if (spreadType === "three") {
-      if (category) {
-        payloadCategory = category;
-        payloadQuestion = null;
-      } else if (trimmedQuestion) {
-        payloadCategory = null;
-        payloadQuestion = trimmedQuestion;
-      }
-    }
-
-    const payload = {
-      mode: "auto",
-      spread_type: spreadType,
-      category: payloadCategory,
-      question: payloadQuestion,
-    };
-
-    onCreateSpread?.(payload);
+    // Один источник правды: payload формируется в App.jsx
+    onCreateSpread?.();
   };
 
   const renderCardsSummary = () => {
@@ -167,7 +143,7 @@ function SpreadsScreen({
         )}
       </section>
 
-      {/* Выбор карт */}
+      {/* Выбор карт — режим “выбор / обряд” */}
       <section className="card card-cards">
         <h2>Выбор карт</h2>
         <p className="muted">
@@ -175,7 +151,7 @@ function SpreadsScreen({
         </p>
 
         <TarotCarousel
-          selectedCount={selectedCount}
+          selectedCards={selectedCards}
           maxCards={maxCards}
           onSelectCard={onSelectCard}
         />
@@ -185,7 +161,7 @@ function SpreadsScreen({
         </p>
       </section>
 
-      {/* Кнопка */}
+      {/* Кнопка создания расклада */}
       <section className="card card-actions">
         <button
           className="btn-primary"
@@ -201,7 +177,7 @@ function SpreadsScreen({
         </p>
       </section>
 
-      {/* Текущий расклад */}
+      {/* Текущий расклад — режим “просмотр результата” */}
       <section className="card section spread-current">
         <div className="spread-current-header">
           <p className="section-title">Текущий расклад</p>
@@ -245,7 +221,16 @@ function SpreadsScreen({
               )}
             </div>
 
-            <div className="spread-cards">{renderCardsSummary()}</div>
+            {/* Финальный просмотр карт через TarotCarousel */}
+            <div className="spread-cards">
+              <TarotCarousel
+                selectedCards={currentSpread?.cards || []}
+                maxCards={
+                  currentSpread?.spread_type === "one" ? 1 : 3
+                }
+              />
+              {renderCardsSummary()}
+            </div>
 
             {currentSpread.interpretation && (
               <div className="spread-interpretation">
