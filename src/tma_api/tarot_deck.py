@@ -19,12 +19,12 @@ logger = logging.getLogger(__name__)
 class TarotCard(TypedDict, total=False):
     code: str
     name: NotRequired[str]
-    type: NotRequired[str]              # major/minor
+    type: NotRequired[str]               # major/minor
     suit: NotRequired[str]
     description: NotRequired[str]
-    meaning_upright: NotRequired[str]
-    meaning_reversed: NotRequired[str]
-    keywords: NotRequired[list[str]]
+    meaning_upright: dict
+    meaning_reversed: dict
+    keywords: dict
     image_url: str
     is_reversed: NotRequired[bool]
 
@@ -37,18 +37,12 @@ DECK_PATH = BASE_DIR / "data" / "tarot_deck.json"
 
 
 # ---------------------------------------------------------
-# Рекурсивный сбор всех карт
+# Рекурсивный сбор карт
 # ---------------------------------------------------------
 def _iter_card_dicts(obj) -> Iterable[dict]:
-    """
-    Рекурсивно обходит любую структуру и достаёт объекты,
-    которые похожи на карты (name + один из ключей).
-    """
     if isinstance(obj, dict):
-
-        if "name" in obj and ("image_url" in obj or "type" in obj or "id" in obj or "code" in obj):
+        if "name" in obj and ("type" in obj or "image_url" in obj or "code" in obj or "id" in obj):
             yield obj
-
         for v in obj.values():
             yield from _iter_card_dicts(v)
 
@@ -58,40 +52,41 @@ def _iter_card_dicts(obj) -> Iterable[dict]:
 
 
 # ---------------------------------------------------------
-# Нормализация карты
+# Нормализация карты (ТЗ 2.1)
 # ---------------------------------------------------------
 def _normalize_card(raw: dict) -> TarotCard:
-    """
-    Гарантируем наличие:
-      - code
-      - image_url
-    Остальные поля оставляем как есть.
-    """
+    # 1. CODE: сначала code → id → fallback
+    code = raw.get("code") or raw.get("id")
 
-    if "code" not in raw:
-        # fallback: пробуем собрать code из name (редкий случай)
-        name = raw.get("name", "")
-        code = name.lower().replace(" ", "_")
-        logger.warning("Card has no code, generated fallback code: %s", code)
-    else:
-        code = str(raw["code"]).strip().lower()
+    if not code:
+        name = str(raw.get("name", "")).strip().lower()
+        code = name.replace(" ", "_")
+        logger.warning("Card has no code and id, generated fallback code: %s", code)
 
-    # нормализация image_url
+    # 2. IMAGE_URL: не начинаем со слэша, путь строго как в таблице
     image_url = raw.get("image_url")
 
     if not image_url:
-        # генерируем путь по code
-        image_url = f"/images/tarot/{code}.jpg"
+        card_type = raw.get("type")
+        if card_type == "major":
+            image_url = f"images/major/{code}.jpg"
+        else:
+            image_url = f"images/minor/{code}.jpg"
+
+    # 3. meaning*/keywords всегда должны быть dict
+    meaning_upright = raw.get("meaning_upright") or {}
+    meaning_reversed = raw.get("meaning_reversed") or {}
+    keywords = raw.get("keywords") or {}
 
     return {
-        "code": code,
+        "code": str(code),
         "name": raw.get("name"),
         "type": raw.get("type"),
         "suit": raw.get("suit"),
         "description": raw.get("description"),
-        "meaning_upright": raw.get("meaning_upright"),
-        "meaning_reversed": raw.get("meaning_reversed"),
-        "keywords": raw.get("keywords"),
+        "meaning_upright": meaning_upright,
+        "meaning_reversed": meaning_reversed,
+        "keywords": keywords,
         "image_url": image_url,
         "is_reversed": raw.get("is_reversed"),
     }
@@ -109,13 +104,12 @@ def _load_deck() -> list[TarotCard]:
 
     root_obj = raw["cards"] if isinstance(raw, dict) and "cards" in raw else raw
 
-    # Достаём все карты рекурсивно
     raw_cards = [c for c in _iter_card_dicts(root_obj)]
 
     if not raw_cards:
         raise ValueError("No tarot card dicts found in tarot_deck.json")
 
-    # Нормализация всех карт (добавляем code + image_url)
+    # ПРОПУСКАЕМ ВСЕ КАРТЫ ЧЕРЕЗ normalize
     cards = [_normalize_card(c) for c in raw_cards]
 
     if len(cards) < 3:
@@ -129,7 +123,7 @@ def _load_deck() -> list[TarotCard]:
 
 
 # ---------------------------------------------------------
-# Устойчивый выбор карт (T1.2)
+# Устойчивый выбор карт
 # ---------------------------------------------------------
 def draw_random_cards(count: int) -> list[TarotCard]:
     if count <= 0:

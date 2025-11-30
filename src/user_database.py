@@ -116,6 +116,8 @@ class UserDatabase:
         """Миграция существующих таблиц без потери данных"""
         
         # Проверяем и добавляем недостающие столбцы в users
+        self._add_column_if_not_exists('users', 'first_name', 'TEXT')
+        self._add_column_if_not_exists('users', 'last_name', 'TEXT')
         self._add_column_if_not_exists('users', 'birth_date', 'TEXT')
         self._add_column_if_not_exists('users', 'gender', 'TEXT')
         
@@ -573,10 +575,9 @@ class UserDatabase:
             return None
 
     def get_user_profile(self, user_id: int) -> dict:
-        """Исправленный метод получения профиля пользователя"""
+        """Старый метод получения профиля (для бота)"""
         
         try:
-            # УБИРАЕМ updated_at из запроса
             query = '''
             SELECT user_id, username, first_name, last_name, birth_date, gender, created_at
             FROM users 
@@ -600,10 +601,77 @@ class UserDatabase:
                 
         except Exception as e:
             logger.error(f"❌ Ошибка получения профиля пользователя {user_id}: {e}")
-            # Выводим полную информацию об ошибке для диагностики
             import traceback
             logger.error(f"🔍 Детали ошибки: {traceback.format_exc()}")
             return {}
+
+    # --- НОВЫЕ TMA-методы профиля ------------------------------------------
+
+    def update_profile(self, user_id: int, data: Dict[str, Any]) -> bool:
+        """
+        TMA-профиль: обновляет first_name, last_name, birth_date, gender по dict data.
+        Ожидает ключи: "first_name", "last_name", "birth_date", "gender" (любые могут отсутствовать).
+        """
+        try:
+            allowed_fields = ("first_name", "last_name", "birth_date", "gender")
+            updates: list[str] = []
+            params: list[Any] = []
+
+            for field in allowed_fields:
+                if field in data:
+                    updates.append(f"{field} = ?")
+                    params.append(data[field])
+
+            if not updates:
+                logger.info("ℹ️ update_profile: нет полей для обновления (user_id=%s)", user_id)
+                return True
+
+            params.append(user_id)
+            query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ?"
+
+            with self.conn:
+                self.cursor.execute(query, params)
+                if self.cursor.rowcount > 0:
+                    logger.info("👤 Профиль (TMA) пользователя %s обновлён", user_id)
+                    return True
+                else:
+                    logger.warning("⚠️ update_profile: пользователь %s не найден", user_id)
+                    return False
+
+        except Exception as e:
+            logger.error("❌ Ошибка update_profile для пользователя %s: %s", user_id, e)
+            return False
+
+    def get_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """
+        TMA-профиль: читает first_name, last_name, birth_date, gender.
+        Возвращает dict или None, если пользователь не найден.
+        """
+        try:
+            self.cursor.execute(
+                """
+                SELECT user_id, first_name, last_name, birth_date, gender
+                FROM users
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+            row = self.cursor.fetchone()
+            if not row:
+                return None
+
+            return {
+                "user_id": row[0],
+                "first_name": row[1],
+                "last_name": row[2],
+                "birth_date": row[3],
+                "gender": row[4],
+            }
+        except Exception as e:
+            logger.error("❌ Ошибка get_profile для пользователя %s: %s", user_id, e)
+            return None
+
+    # -----------------------------------------------------------------------
 
     def get_user_age(self, user_id: int) -> int:
         """Вычисление возраста пользователя на основе даты рождения"""
