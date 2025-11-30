@@ -1,129 +1,122 @@
 // tma_frontend/src/api/client.js
 
-// Базовый URL
+// Базовый URL API
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  (window.__tma && (window.__tma.API_BASE_URL || window.__tma.apiBaseUrl)) ||
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://localhost:8000";
 
-// Универсальные заголовки
-function getAuthHeaders() {
-  const isDevMode = import.meta.env.VITE_TMA_DEV_MODE === "1";
+console.log("[TMA] API_BASE_URL:", API_BASE_URL);
 
-  if (isDevMode) {
-    return {
-      "X-Dev-User-Id": "123",
-      "X-Dev-Username": "dev_user",
-    };
+// Собираем заголовки: initData или dev-хедеры
+function buildHeaders(hasBody) {
+  const headers = {};
+
+  if (hasBody) {
+    headers["Content-Type"] = "application/json";
   }
 
-  const initData = window.__tma?.initData;
-  if (!initData) return {};
+  // Пытаемся взять initData из window.__tma
+  const initData =
+    (window.__tma && (window.__tma.InitData || window.__tma.initData)) || null;
 
-  return {
-    "X-Telegram-Init-Data": initData,
-  };
+  if (initData) {
+    headers["X-Telegram-Init-Data"] = initData;
+  } else {
+    // DEV-режим: подставляем фиктивного пользователя
+    headers["X-Dev-User-Id"] = "123";
+    headers["X-Dev-Username"] = "dev_user";
+  }
+
+  return headers;
 }
 
-// Обёртки запросов
-async function apiGet(path) {
-  const isDevMode = import.meta.env.VITE_TMA_DEV_MODE === "1";
+// Общий хелпер для всех запросов
+async function apiRequest(method, path, body) {
+  const url = API_BASE_URL + path;
 
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
-  });
+  const hasBody = body !== undefined && body !== null;
+  const options = {
+    method,
+    headers: buildHeaders(hasBody),
+  };
 
-  let json;
+  if (hasBody) {
+    options.body = JSON.stringify(body);
+  }
+
+  console.log(`[TMA] API ${method} ${path}`, body || "");
+
+  const res = await fetch(url, options);
+
+  if (!res.ok) {
+    let text = "";
+    try {
+      text = await res.text();
+    } catch (e) {
+      // ignore
+    }
+    console.error(
+      `[TMA] API error ${res.status} ${method} ${path}:`,
+      text || "<empty>"
+    );
+    throw new Error(`API ${method} ${path} failed: ${res.status}`);
+  }
+
+  if (res.status === 204) {
+    return null;
+  }
+
   try {
-    json = await res.json();
-  } catch {
-    throw new Error("Invalid JSON response");
+    return await res.json();
+  } catch (e) {
+    console.error(
+      `[TMA] Failed to parse JSON for ${method} ${path}:`,
+      e
+    );
+    throw e;
   }
-
-  if (isDevMode) {
-    console.log("API GET", path, "→", json);
-  }
-
-  if (!res.ok || !json.ok) {
-    console.log("API GET error:", json);
-    throw new Error(json.error?.message || "GET request failed");
-  }
-
-  return json; // APIResponse
 }
 
-async function apiPost(path, body) {
-  const isDevMode = import.meta.env.VITE_TMA_DEV_MODE === "1";
-
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
-    body: JSON.stringify(body),
-  });
-
-  const json = await res.json().catch(() => null);
-
-  if (isDevMode) {
-    console.log("API POST", path, "BODY:", body, "→", json);
-  }
-
-  if (!res.ok || !json?.ok) {
-    console.log("API POST error:", json);
-    throw new Error(json?.error?.message || "POST request failed");
-  }
-
-  return json;
+// Универсальные обёртки
+export function apiGet(path) {
+  return apiRequest("GET", path);
 }
 
-// High-level API
-
-export async function fetchProfile() {
-  const resp = await apiGet("/profile");
-  return resp.data;
+export function apiPost(path, body) {
+  return apiRequest("POST", path, body);
 }
 
-export async function fetchSpreads(page = 1, limit = 10) {
-  const resp = await apiGet(`/spreads?page=${page}&limit=${limit}`);
-  return resp.data;
+// ==== Специализированные API-функции ====
+
+// Профиль
+export function fetchProfile() {
+  return apiGet("/profile");
 }
 
-// Универсальный auto-расклад
-export async function createAutoSpread(payload = {}) {
-  const body = {
-    spread_type: payload.spread_type || "three",
-    category: payload.category || "love",
-    mode: payload.mode || "auto",
-    question: payload.question ?? null,
-  };
-
-  const resp = await apiPost("/spreads", body);
-  return resp.data;
+// Можно использовать, если захочешь, но сейчас App.jsx дергает apiPost напрямую
+export function updateProfile(data) {
+  return apiPost("/profile", data);
 }
 
-// Обновление профиля
-export async function updateProfile(payload) {
-  const resp = await apiPost("/profile", payload);
-  return resp.data;
+// История раскладов
+export function fetchSpreads(page = 1, limit = 10) {
+  const search = `?page=${page}&limit=${limit}`;
+  return apiGet("/spreads" + search);
 }
 
-// -----------------------------
-// ТЗ 16.3 — Вопросы к раскладу
-// -----------------------------
-
-// 3.1 Получить список вопросов к раскладу
-export async function fetchSpreadQuestions(spreadId) {
-  const resp = await apiGet(`/spreads/${spreadId}/questions`);
-  return resp.data; // apiGet вернул APIResponse → забираем data
+// Создание авто-расклада
+export function createAutoSpread(payload) {
+  // payload: { mode: "auto", spread_type, category?, question? }
+  return apiPost("/spreads", payload);
 }
 
-// 3.2 Отправить вопрос к раскладу
-export async function askSpreadQuestion(spreadId, question) {
-  const payload = { question };
-  const resp = await apiPost(`/spreads/${spreadId}/questions`, payload);
-  return resp.data; // возвращаем SpreadQuestionModel
+// Вопросы к раскладу
+export function fetchSpreadQuestions(spreadId) {
+  return apiGet(`/spreads/${spreadId}/questions`);
+}
+
+export function askSpreadQuestion(spreadId, payload) {
+  // payload: { question: string }
+  return apiPost(`/spreads/${spreadId}/questions`, payload);
 }
