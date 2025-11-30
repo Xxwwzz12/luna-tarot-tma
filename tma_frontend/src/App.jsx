@@ -1,9 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useState } from "react";
 import {
-  fetchProfile,
-  fetchSpreads,
-  createAutoSpread,
+  apiGet,
   apiPost,
   fetchSpreadQuestions,
   askSpreadQuestion,
@@ -94,6 +92,44 @@ function App() {
     }
   }, [theme]);
 
+  // Загрузка профиля с правильной распаковкой res.data
+  async function fetchProfile() {
+    console.log("[TMA] API GET /profile");
+    const res = await apiGet("/profile");
+
+    if (res?.ok && res.data) {
+      setProfile(res.data);
+      console.log("[TMA] Profile loaded:", {
+        user_id: res.data.user_id,
+        username: res.data.username,
+      });
+    } else {
+      console.warn("[TMA] Failed to load profile", res);
+    }
+  }
+
+  // Загрузка истории раскладов с правильной распаковкой res.data
+  async function fetchSpreadsList(page = 1, limit = 10) {
+    console.log(
+      "[TMA] API GET /spreads?page=%s&limit=%s",
+      page,
+      limit
+    );
+    const res = await apiGet(`/spreads?page=${page}&limit=${limit}`);
+
+    if (res?.ok && res.data && Array.isArray(res.data.items)) {
+      setSpreads(res.data);
+      console.log(
+        "[TMA] Spreads list loaded:",
+        res.data.items.length,
+        "items"
+      );
+    } else {
+      console.warn("[TMA] Spreads list is empty or invalid.", res);
+      setSpreads(null);
+    }
+  }
+
   // Первичная загрузка профиля и истории раскладов
   useEffect(() => {
     async function loadInitial() {
@@ -102,31 +138,7 @@ function App() {
 
         console.log("[TMA] API_BASE_URL:", import.meta.env.VITE_API_BASE_URL);
 
-        const [profileData, spreadsData] = await Promise.all([
-          fetchProfile(),
-          fetchSpreads(),
-        ]);
-
-        console.log("[TMA] Profile loaded:", {
-          user_id: profileData?.user_id,
-          username: profileData?.username,
-        });
-
-        setProfile(profileData);
-
-        if (spreadsData && Array.isArray(spreadsData.items)) {
-          console.log(
-            "[TMA] Spreads list loaded:",
-            spreadsData.items.length,
-            "items"
-          );
-          setSpreads({
-            items: spreadsData.items,
-            total_items: spreadsData.total_items,
-          });
-        } else {
-          console.log("[TMA] Spreads list is empty or invalid.");
-        }
+        await Promise.all([fetchProfile(), fetchSpreadsList()]);
       } catch (e) {
         console.error("[TMA] Initial load error:", e);
         setError(e.message || "Ошибка загрузки");
@@ -193,88 +205,79 @@ function App() {
     });
   }
 
-  // Создание расклада (handleCreateSpread)
-  // СИНХРОНИЗАЦИЯ КОНТРАКТА:
-  // - Если SpreadsScreen вызывает onCreateSpread(payloadFromChild),
-  //   используем этот payload.
-  // - Если вызывается без аргумента, собираем payload из стейта App (старое поведение).
-  // selectedCards при этом НЕ уходят на сервер — это только фронтовый ритуал.
-  async function handleCreateSpread(payloadFromChild) {
+  // Создание расклада (POST /spreads) с правильной распаковкой res.data
+  // Ожидаем, что payload полностью подготовлен в SpreadsScreen и передан сюда.
+  async function handleCreateSpread(payload) {
     try {
+      if (!payload) {
+        console.warn("[TMA] handleCreateSpread called without payload");
+        return;
+      }
+
       setLoading(true);
       setError(null);
 
-      const basePayload = {
-        spread_type: spreadType,
-        category,
-        mode: "auto",
-        question: question.trim() || null,
-      };
+      console.log("[TMA] API POST /spreads", payload);
+      const res = await apiPost("/spreads", payload);
 
-      const payload = payloadFromChild ?? basePayload;
+      if (res?.ok && res.data) {
+        const detail = res.data; // SpreadDetail от бэка
 
-      const detail = await createAutoSpread(payload);
+        setCurrentSpread(detail);
+        setActiveTab("spreads");
 
-      const detailWithQuestion = {
-        ...detail,
-        question: payload.question || null,
-      };
+        // Обновляем историю, если уже загружена
+        setSpreads((prev) => {
+          if (!prev || !Array.isArray(prev.items)) return prev;
 
-      // Сохраняем детальный расклад и переходим на вкладку "Расклады"
-      setCurrentSpread(detailWithQuestion);
-      setActiveTab("spreads");
+          const newItem = {
+            id: detail.id,
+            spread_type: detail.spread_type,
+            category: detail.category || "general",
+            created_at: detail.created_at,
+            short_preview: detail.interpretation
+              ? detail.interpretation.slice(0, 140).trim()
+              : null,
+            has_questions: false,
+            interpretation: detail.interpretation || null,
+          };
 
-      // Обновляем историю
-      setSpreads((prev) => {
-        if (!prev || !Array.isArray(prev.items)) return prev;
+          return {
+            ...prev,
+            items: [newItem, ...prev.items],
+            total_items: (prev.total_items || prev.items.length) + 1,
+          };
+        });
 
-        const newItem = {
-          id: detail.id,
-          spread_type: detail.spread_type,
-          category: detail.category || "general",
-          created_at: detail.created_at,
-          short_preview: detail.interpretation
-            ? detail.interpretation.slice(0, 140).trim()
-            : null,
-          has_questions: false,
-          interpretation: detail.interpretation || null,
-        };
+        // подгружаем вопросы уже по созданному раскладу
+        await loadQuestionsForSpread(detail.id);
 
-        const prevItems = prev.items || [];
-        const prevTotal =
-          typeof prev.total_items === "number"
-            ? prev.total_items
-            : prevItems.length;
-
-        return {
-          ...prev,
-          items: [newItem, ...prevItems],
-          total_items: prevTotal + 1,
-        };
-      });
-
-      // подгружаем вопросы уже по созданному раскладу
-      await loadQuestionsForSpread(detail.id);
-
-      // сброс вопроса и выбранных карт после успешного создания
-      setQuestion("");
-      setSelectedCards([]); // picker очищается после ритуала
-      setNewQuestion("");
+        // сброс вопроса и выбранных карт после успешного создания
+        setQuestion("");
+        setSelectedCards([]); // picker очищается после ритуала
+        setNewQuestion("");
+      } else {
+        console.warn("[TMA] Failed to create spread", res);
+        setError("Не удалось создать расклад");
+      }
     } catch (err) {
-      console.error("Create spread error:", err);
+      console.error("[TMA] Error in handleCreateSpread", err);
       setError(err.message || "Не удалось создать расклад");
     } finally {
       setLoading(false);
     }
   }
 
-  // Обновление профиля — P1: прямой POST /profile и обновление стейта
+  // Обновление профиля — P1 + правильная распаковка res.data
   async function handleUpdateProfile(update) {
     try {
       console.log("[TMA] Updating profile with payload:", update);
-      const response = await apiPost("/profile", update);
-      setProfile(response);
-      console.log("[TMA] Profile updated:", response);
+      const res = await apiPost("/profile", update);
+      console.log("[TMA] Profile updated:", res);
+
+      if (res?.ok && res.data) {
+        setProfile(res.data);
+      }
     } catch (err) {
       console.error("[TMA] Failed to update profile", err);
     }
@@ -350,7 +353,7 @@ function App() {
             // выбор карт (picker)
             selectedCards={selectedCards}
             onSelectCard={handleSelectCard}
-            // создание расклада
+            // создание расклада (SpreadsScreen формирует payload и передаёт сюда)
             onCreateSpread={handleCreateSpread}
             // Q&A
             questions={questions}

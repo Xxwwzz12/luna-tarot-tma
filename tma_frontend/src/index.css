@@ -290,7 +290,7 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Buttons */
+/* Кнопки */
 button {
   padding: 8px 14px;
   background: var(--bg-soft);
@@ -324,10 +324,9 @@ button:disabled {
 
 .btn-primary:disabled {
   opacity: 0.6;
-  cursor: not-allowed;
 }
 
-/* Призрачная кнопка (вспомогательная) */
+/* Ghost button */
 .btn-ghost {
   background: transparent;
   border: none;
@@ -342,7 +341,7 @@ button:disabled {
 }
 
 /* =========================================================
-   КАРУСЕЛЬ ТАРО (центрирование + веер + анимации)
+   КАРУСЕЛЬ ТАРО (центрирование + веер + flip + spin)
    ========================================================= */
 .page-spreads {
   display: flex;
@@ -350,29 +349,15 @@ button:disabled {
   gap: 8px;
 }
 
-.section-title {
-  font-size: 0.9rem;
-  font-weight: 600;
-  margin: 0 0 6px;
-}
-
-.section-subtitle {
-  font-size: 0.85rem;
-  opacity: 0.9;
-  margin: 10px 0 4px;
-}
-
-/* Контейнер карусели */
+/* Формирование стопки */
 .tarot-carousel {
   margin-top: 8px;
 }
 
-/* Внутренняя зона под стопку карт */
 .tarot-carousel-shell {
   margin-top: 12px;
 }
 
-/* Стопка карт — центрируем, добавляем перспективу */
 .tarot-stack {
   position: relative;
   height: 220px;
@@ -382,7 +367,7 @@ button:disabled {
   perspective: 900px;
 }
 
-/* Базовый вид карты */
+/* Базовая карта */
 .tarot-card {
   width: 120px;
   height: 190px;
@@ -393,17 +378,25 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  backface-visibility: hidden;
   transform-style: preserve-3d;
+  backface-visibility: hidden;
   transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
 }
 
-/* Рубашка карты */
-.tarot-card-back {
-  font-size: 2rem;
-  opacity: 0.9;
-  transition: transform 0.6s ease, opacity 0.6s ease;
+/* Изображение карты */
+.tarot-card-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  border-radius: 12px;
   backface-visibility: hidden;
+}
+
+/* Перевёрнутая карта */
+.tarot-card-image-reversed {
+  transform: rotate(180deg);
+  transition: transform 0.3s ease;
 }
 
 /* Основная карта */
@@ -415,20 +408,28 @@ button:disabled {
   backface-visibility: hidden;
 }
 
-/* Во время перетаскивания */
 .tarot-card.main.dragging {
   cursor: grabbing;
 }
 
-/* Лёгкая анимация "флипа" */
+/* Flip */
 .tarot-card.main.flipping .tarot-card-back {
   transform: rotateY(180deg);
   opacity: 0.9;
+  transition: transform 0.6s ease, opacity 0.6s ease;
 }
 
-/* Спин — подчёркиваем быстрым transition */
+/* Spin */
 .tarot-card.main.spinning {
   transition: transform 0.12s ease-out;
+}
+
+/* Рубашка карты */
+.tarot-card-back {
+  font-size: 2rem;
+  opacity: 0.9;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  backface-visibility: hidden;
 }
 
 /* Призрачные карты */
@@ -439,25 +440,17 @@ button:disabled {
   transform-origin: center center;
 }
 
-/* Левая призрачная */
 .tarot-card.ghost-left {
   left: 50%;
   transform: translateX(-130%) rotate(-6deg);
 }
 
-/* Правая призрачная */
 .tarot-card.ghost-right {
   left: 50%;
   transform: translateX(30%) rotate(6deg);
 }
 
-/* Перевёрнутая карта (для img внутри) */
-.tarot-card-image-reversed {
-  transform: rotate(180deg);
-  transition: transform 0.25s ease;
-}
-
-/* Низ карусели: кнопки ◀ ▶ + подпись */
+/* Низ карусели */
 .carousel-controls {
   margin-top: 12px;
   display: flex;
@@ -503,7 +496,6 @@ button:disabled {
   opacity: 0.7;
 }
 
-/* Шапка секции текущего расклада */
 .spread-current-header {
   display: flex;
   justify-content: space-between;
@@ -512,7 +504,7 @@ button:disabled {
   margin-bottom: 6px;
 }
 
-/* Мягкий бейдж — “из истории” и др. */
+/* Бейдж */
 .badge-soft {
   padding: 2px 8px;
   border-radius: 999px;
@@ -527,7 +519,7 @@ button:disabled {
   color: #7b3fa8;
 }
 
-/* Кликабельные элементы истории */
+/* История */
 .history-item-clickable {
   cursor: pointer;
   transition:

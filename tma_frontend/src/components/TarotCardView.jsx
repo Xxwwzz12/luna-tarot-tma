@@ -5,20 +5,16 @@ import React from "react";
 export default function TarotCardView({ card, positionLabel }) {
   if (!card) return null;
 
-  const isReversed = !!card.is_reversed;
-  const fallbackSrc = "/images/tarot/back.png";
+  const src =
+    card?.image_url ||
+    card?.imageUrl ||
+    card?.image ||
+    "/images/tarot/back.png";
 
-  // поддерживаем несколько вариантов имени поля на всякий случай
-  const imageSrc =
-    card.image_url ||
-    card.imageUrl ||
-    card.image ||
-    fallbackSrc;
+  const isReversed = !!card?.is_reversed;
 
-  const imageClassName =
+  const imgClassName =
     "tarot-card-image" + (isReversed ? " tarot-card-image-reversed" : "");
-
-  const orientationLabel = isReversed ? "перевернутая" : "прямая";
 
   return (
     <div className="tarot-card-view">
@@ -29,22 +25,20 @@ export default function TarotCardView({ card, positionLabel }) {
       )}
 
       <div className="tarot-card-image-wrap">
-        <img
-          src={imageSrc}
-          alt={card.name || "Карта Таро"}
-          className={imageClassName}
-        />
+        <img src={src} alt={card?.name || "Таро"} className={imgClassName} />
       </div>
 
       <div className="tarot-card-caption">
-        {card.name && (
+        {card?.name && (
           <div className="tarot-card-name">
             {card.name}
           </div>
         )}
-        <div className="tarot-card-orientation">
-          {card.name && `${card.name} (${orientationLabel})`}
-        </div>
+        {card?.name && (
+          <div className="tarot-card-orientation muted small">
+            {card.name} {isReversed ? "(перевернутая)" : "(прямая)"}
+          </div>
+        )}
       </div>
     </div>
   );

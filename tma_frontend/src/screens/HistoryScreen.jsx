@@ -15,13 +15,6 @@ function formatDate(value) {
   });
 }
 
-function makeSnippet(text, maxLength = 140) {
-  if (!text) return "";
-  const trimmed = text.trim();
-  if (trimmed.length <= maxLength) return trimmed;
-  return trimmed.slice(0, maxLength).trimEnd() + "…";
-}
-
 function getSpreadTitle(spreadType) {
   switch (spreadType) {
     case "one":
@@ -33,27 +26,7 @@ function getSpreadTitle(spreadType) {
   }
 }
 
-function getPreviewText(spread) {
-  const { short_preview, interpretation } = spread || {};
-
-  if (short_preview && short_preview.trim()) {
-    return short_preview.trim();
-  }
-
-  if (interpretation && interpretation.trim()) {
-    return makeSnippet(interpretation, 140);
-  }
-
-  return "Интерпретация пока отсутствует.";
-}
-
 export default function HistoryScreen({ spreads = [], onSelectSpread }) {
-  const handleClick = (id) => {
-    if (onSelectSpread) {
-      onSelectSpread(id);
-    }
-  };
-
   if (!spreads.length) {
     return (
       <div className="page page-history">
@@ -70,35 +43,39 @@ export default function HistoryScreen({ spreads = [], onSelectSpread }) {
       <h2 className="section-title">История раскладов</h2>
 
       <ul className="history-list">
-        {spreads.map((spread) => (
-          <li
-            key={spread.id}
-            className={`card history-item ${
-              onSelectSpread ? "history-item-clickable" : ""
-            }`}
-            onClick={() => handleClick(spread.id)}
-          >
-            <div className="history-header">
-              <span className="history-title">
-                {getSpreadTitle(spread.spread_type)}
-              </span>
-              <span className="history-date">
-                {formatDate(spread.created_at)}
-              </span>
-            </div>
+        {spreads.map((spread) => {
+          const preview = spread.short_preview?.trim() || "";
+          const text =
+            preview || "Интерпретация пока отсутствует.";
 
-            <p
-              className={
-                "history-snippet" +
-                (!spread.short_preview && !spread.interpretation
-                  ? " muted"
-                  : "")
-              }
+          return (
+            <li
+              key={spread.id}
+              className={`card history-item ${
+                onSelectSpread ? "history-item-clickable" : ""
+              }`}
+              onClick={() => onSelectSpread?.(spread.id)}
             >
-              {getPreviewText(spread)}
-            </p>
-          </li>
-        ))}
+              <div className="history-header">
+                <span className="history-title">
+                  {getSpreadTitle(spread.spread_type)}
+                </span>
+                <span className="history-date">
+                  {formatDate(spread.created_at)}
+                </span>
+              </div>
+
+              <p
+                className={
+                  "history-snippet" +
+                  (preview ? "" : " muted")
+                }
+              >
+                {text}
+              </p>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

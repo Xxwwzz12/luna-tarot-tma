@@ -8,7 +8,7 @@ const API_BASE_URL =
 
 console.log("[TMA] API_BASE_URL:", API_BASE_URL);
 
-// Собираем заголовки: initData или dev-хедеры
+// Сбор заголовков
 function buildHeaders(hasBody) {
   const headers = {};
 
@@ -16,14 +16,12 @@ function buildHeaders(hasBody) {
     headers["Content-Type"] = "application/json";
   }
 
-  // Пытаемся взять initData из window.__tma
   const initData =
     (window.__tma && (window.__tma.InitData || window.__tma.initData)) || null;
 
   if (initData) {
     headers["X-Telegram-Init-Data"] = initData;
   } else {
-    // DEV-режим: подставляем фиктивного пользователя
     headers["X-Dev-User-Id"] = "123";
     headers["X-Dev-Username"] = "dev_user";
   }
@@ -31,11 +29,11 @@ function buildHeaders(hasBody) {
   return headers;
 }
 
-// Общий хелпер для всех запросов
+// Универсальная функция
 async function apiRequest(method, path, body) {
   const url = API_BASE_URL + path;
-
   const hasBody = body !== undefined && body !== null;
+
   const options = {
     method,
     headers: buildHeaders(hasBody),
@@ -47,38 +45,40 @@ async function apiRequest(method, path, body) {
 
   console.log(`[TMA] API ${method} ${path}`, body || "");
 
-  const res = await fetch(url, options);
-
-  if (!res.ok) {
-    let text = "";
-    try {
-      text = await res.text();
-    } catch (e) {
-      // ignore
-    }
-    console.error(
-      `[TMA] API error ${res.status} ${method} ${path}:`,
-      text || "<empty>"
-    );
-    throw new Error(`API ${method} ${path} failed: ${res.status}`);
+  let res;
+  try {
+    res = await fetch(url, options);
+  } catch (networkError) {
+    console.error(`[TMA] Network error ${method} ${path}:`, networkError);
+    return { ok: false, data: null, error: { message: "Network error" } };
   }
 
   if (res.status === 204) {
-    return null;
+    return { ok: true, data: null, error: null };
   }
 
+  let json;
   try {
-    return await res.json();
+    json = await res.json();
   } catch (e) {
-    console.error(
-      `[TMA] Failed to parse JSON for ${method} ${path}:`,
-      e
-    );
-    throw e;
+    console.error(`[TMA] JSON parse error ${method} ${path}:`, e);
+    return { ok: false, data: null, error: { message: "Invalid JSON response" } };
   }
+
+  // Оборачиваем ответ в единый формат
+  if (!res.ok) {
+    console.error(`[TMA] API error ${res.status} ${method} ${path}:`, json);
+    return { ok: false, data: json?.data || null, error: json?.error || { message: "API error" } };
+  }
+
+  return {
+    ok: true,
+    data: json,
+    error: null,
+  };
 }
 
-// Универсальные обёртки
+// Обёртки
 export function apiGet(path) {
   return apiRequest("GET", path);
 }
@@ -87,36 +87,35 @@ export function apiPost(path, body) {
   return apiRequest("POST", path, body);
 }
 
-// ==== Специализированные API-функции ====
+// ====== Специализированные API-функции ======
 
 // Профиль
-export function fetchProfile() {
-  return apiGet("/profile");
+export async function fetchProfile() {
+  const resp = await apiGet("/profile");
+  return resp; // { ok, data, error }
 }
 
-// Можно использовать, если захочешь, но сейчас App.jsx дергает apiPost напрямую
-export function updateProfile(data) {
-  return apiPost("/profile", data);
+export async function updateProfile(payload) {
+  const resp = await apiPost("/profile", payload);
+  return resp; // { ok, data, error }
 }
 
 // История раскладов
-export function fetchSpreads(page = 1, limit = 10) {
-  const search = `?page=${page}&limit=${limit}`;
-  return apiGet("/spreads" + search);
+export async function fetchSpreads(page = 1, limit = 10) {
+  const resp = await apiGet(`/spreads?page=${page}&limit=${limit}`);
+  return resp; // { ok, data, error }
 }
 
-// Создание авто-расклада
-export function createAutoSpread(payload) {
-  // payload: { mode: "auto", spread_type, category?, question? }
-  return apiPost("/spreads", payload);
+// Авто-расклад
+export async function createAutoSpread(payload) {
+  return apiPost("/spreads", payload); // { ok, data, error }
 }
 
 // Вопросы к раскладу
-export function fetchSpreadQuestions(spreadId) {
-  return apiGet(`/spreads/${spreadId}/questions`);
+export async function fetchSpreadQuestions(spreadId) {
+  return apiGet(`/spreads/${spreadId}/questions`); // { ok, data, error }
 }
 
-export function askSpreadQuestion(spreadId, payload) {
-  // payload: { question: string }
-  return apiPost(`/spreads/${spreadId}/questions`, payload);
+export async function askSpreadQuestion(spreadId, payload) {
+  return apiPost(`/spreads/${spreadId}/questions`, payload); // { ok, data, error }
 }

@@ -2,15 +2,15 @@
 import React, { useEffect, useState } from "react";
 
 function ProfileScreen({ profile, onUpdateProfile, theme, onThemeChange }) {
-  // Локальные стейты, инициализируем из profile
+  // Стейты по ТЗ P2
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [gender, setGender] = useState("");
 
+  // Инициализация из profile
   useEffect(() => {
     if (!profile) return;
-
     setFirstName(profile.first_name || "");
     setLastName(profile.last_name || "");
     setBirthDate(profile.birth_date || "");
@@ -20,7 +20,7 @@ function ProfileScreen({ profile, onUpdateProfile, theme, onThemeChange }) {
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    // ВАЖНО: строго по ТЗ — нормализованный payload
+    // Важно: только нормализованный payload, без fetch внутри
     onUpdateProfile?.({
       first_name: firstName || null,
       last_name: lastName || null,
@@ -31,7 +31,7 @@ function ProfileScreen({ profile, onUpdateProfile, theme, onThemeChange }) {
 
   return (
     <div className="page page-profile">
-      {/* Верхняя карточка */}
+      {/* Верхняя карточка с аватаром */}
       <div className="card profile-header">
         <div className="avatar-circle">
           <span>👤</span>
@@ -46,7 +46,7 @@ function ProfileScreen({ profile, onUpdateProfile, theme, onThemeChange }) {
         </div>
       </div>
 
-      {/* Тема оформления */}
+      {/* Блок выбора темы */}
       <div className="card section">
         <p className="section-title">Тема оформления</p>
         <div className="pill-switch">
@@ -120,7 +120,7 @@ function ProfileScreen({ profile, onUpdateProfile, theme, onThemeChange }) {
               value={gender || ""}
               onChange={(e) => setGender(e.target.value)}
             >
-            <option value="">Не указан</option>
+              <option value="">Не указан</option>
               <option value="male">Мужской</option>
               <option value="female">Женский</option>
               <option value="other">Другое</option>
