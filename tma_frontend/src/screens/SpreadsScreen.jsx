@@ -41,14 +41,13 @@ function SpreadsScreen({
 
   const trimmedQuestion = (question || "").trim();
 
-  // 🔧 S1: временно убираем зависимость от selectedCount
+  // S1: временно без проверки selectedCount
   const isCreateDisabled =
     !spreadType ||
     (spreadType === "three" && !category && !trimmedQuestion);
 
   const handleCreateSpreadClick = () => {
     if (isCreateDisabled) return;
-    // payload собирается в App.jsx, здесь просто триггер
     onCreateSpread?.();
   };
 
@@ -144,7 +143,7 @@ function SpreadsScreen({
         )}
       </section>
 
-      {/* Выбор карт — обрядовый режим, пока не обязателен для POST */}
+      {/* Выбор карт — режим picker */}
       <section className="card card-cards">
         <h2>Выбор карт</h2>
         <p className="muted">
@@ -153,8 +152,9 @@ function SpreadsScreen({
         </p>
 
         <TarotCarousel
-          selectedCards={selectedCards}
+          mode="picker"
           maxCards={maxCards}
+          pickedCards={selectedCards}
           onSelectCard={onSelectCard}
         />
 
@@ -173,14 +173,13 @@ function SpreadsScreen({
           Сделать расклад
         </button>
 
-        {/* 🔧 S1: честная подсказка про автовыбор карт */}
         <p className="muted small">
           Сейчас карты выбираются автоматически. Визуальный выбор через
           карусель появится позже.
         </p>
       </section>
 
-      {/* Текущий расклад — просмотр результата */}
+      {/* Текущий расклад — режим viewer */}
       <section className="card section spread-current">
         <div className="spread-current-header">
           <p className="section-title">Текущий расклад</p>
@@ -225,12 +224,15 @@ function SpreadsScreen({
             </div>
 
             <div className="spread-cards">
-              <TarotCarousel
-                selectedCards={currentSpread?.cards || []}
-                maxCards={
-                  currentSpread?.spread_type === "one" ? 1 : 3
-                }
-              />
+              {currentSpread && (
+                <TarotCarousel
+                  mode="viewer"
+                  selectedCards={currentSpread.cards || []}
+                  maxCards={
+                    currentSpread.spread_type === "one" ? 1 : 3
+                  }
+                />
+              )}
               {renderCardsSummary()}
             </div>
 

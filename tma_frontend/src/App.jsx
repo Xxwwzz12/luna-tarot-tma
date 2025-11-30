@@ -48,6 +48,7 @@ function App() {
   // Текущий расклад (detail или элемент из списка)
   // Важно: currentSpread намеренно НЕ сбрасывается при смене вкладок —
   // чтобы можно было вернуться к уже открытому раскладу.
+  // currentSpread.cards — это «истинные» карты расклада, пришедшие с бэка (для viewer-карусели).
   const [currentSpread, setCurrentSpread] = useState(null);
 
   // Общие статусы
@@ -60,16 +61,16 @@ function App() {
   const [category, setCategory] = useState("love");
   const [question, setQuestion] = useState("");
 
-  // Выбранные карты (индексы 0–77)
-  // Вариант A: это чисто фронтовый "ритуал" выбора, backend сам выдаёт карты.
-  // POST /spreads не зависит от этого массива, он нужен только для UX и анимации.
+  // Выбранные карты пользователем в режиме picker (TarotCarousel-пикер).
+  // Это чисто фронтовый ритуал: POST /spreads от них не зависит.
+  // Здесь храним объекты карт (минимум: { id, position, ... }).
   const [selectedCards, setSelectedCards] = useState([]);
 
   // Q&A под раскладом
   const [questions, setQuestions] = useState([]);
   const [newQuestion, setNewQuestion] = useState("");
   const [questionsLoading, setQuestionsLoading] = useState(false);
-  const [questionsError, setQuestionsError] = useState("");
+  const [questionsError, setQuestionsError] = useState(false);
 
   // Лог initData один раз (чисто диагностический)
   useEffect(() => {
@@ -156,19 +157,40 @@ function App() {
     }
   }
 
-  // Смена типа расклада — сбрасываем выбранные карты
+  // Смена типа расклада — сбрасываем выбранные карты (picker)
   function handleSpreadTypeChange(type) {
     setSpreadType(type);
     setSelectedCards([]);
   }
 
-  // Выбор карты (индекс 0–77) — чисто фронтовый UX
-  function handleSelectCard(index) {
+  // Выбор карты в режиме picker.
+  // Сигнатура под TarotCarousel: onSelectCard(card, index).
+  // selectedCards — это "выбор пользователя", никак не влияет на backend.
+  function handleSelectCard(card, index) {
+    const maxCards = spreadType === "one" ? 1 : 3;
+
     setSelectedCards((prev) => {
-      const maxCards = spreadType === "one" ? 1 : 3;
-      if (prev.length >= maxCards) return prev; // не больше лимита
-      if (prev.includes(index)) return prev; // без дублей
-      return [...prev, index];
+      if (!card) return prev;
+
+      // не добавляем дубликаты по id+position (или только id, если position нет)
+      const isDuplicate = prev.some(
+        (c) =>
+          c &&
+          card &&
+          c.id === card.id &&
+          // position может быть undefined, поэтому сравниваем тоже аккуратно
+          (c.position === card.position || c.position === undefined)
+      );
+      if (isDuplicate) return prev;
+
+      let next = [...prev, card];
+
+      // ограничиваем по количеству карт
+      if (next.length > maxCards) {
+        next = next.slice(0, maxCards);
+      }
+
+      return next;
     });
   }
 
@@ -177,6 +199,7 @@ function App() {
   // - Если SpreadsScreen вызывает onCreateSpread(payloadFromChild),
   //   используем этот payload.
   // - Если вызывается без аргумента, собираем payload из стейта App (старое поведение).
+  // selectedCards при этом НЕ уходят на сервер — это только фронтовый ритуал.
   async function handleCreateSpread(payloadFromChild) {
     try {
       setLoading(true);
@@ -236,7 +259,7 @@ function App() {
 
       // сброс вопроса и выбранных карт после успешного создания
       setQuestion("");
-      setSelectedCards([]);
+      setSelectedCards([]); // picker очищается после ритуала
       setNewQuestion("");
     } catch (err) {
       console.error("Create spread error:", err);
@@ -333,10 +356,10 @@ function App() {
             onCategoryChange={setCategory}
             question={question}
             onQuestionChange={setQuestion}
-            // выбор карт (фронтовый обряд)
+            // выбор карт (picker)
             selectedCards={selectedCards}
             onSelectCard={handleSelectCard}
-            // создание расклада (payload может прийти из SpreadsScreen)
+            // создание расклада
             onCreateSpread={handleCreateSpread}
             // Q&A
             questions={questions}
