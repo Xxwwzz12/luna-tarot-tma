@@ -1,39 +1,32 @@
 // tma_frontend/src/screens/ProfileScreen.jsx
 import React, { useEffect, useState } from "react";
 
-function ProfileScreen({
-  profile,
-  onUpdateProfile,
-  theme,
-  onThemeChange,
-}) {
-  const [form, setForm] = useState({
-    first_name: "",
-    last_name: "",
-    birth_date: "",
-    gender: "",
-  });
+function ProfileScreen({ profile, onUpdateProfile, theme, onThemeChange }) {
+  // Локальные стейты, инициализируем из profile
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [gender, setGender] = useState("");
 
   useEffect(() => {
     if (!profile) return;
-    setForm({
-      first_name: profile.first_name || "",
-      last_name: profile.last_name || "",
-      birth_date: profile.birth_date || "",
-      gender: profile.gender || "",
-    });
-  }, [profile]);
 
-  const handleChange = (field) => (e) => {
-    setForm((prev) => ({
-      ...prev,
-      [field]: e.target.value,
-    }));
-  };
+    setFirstName(profile.first_name || "");
+    setLastName(profile.last_name || "");
+    setBirthDate(profile.birth_date || "");
+    setGender(profile.gender || "");
+  }, [profile]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (onUpdateProfile) onUpdateProfile(form);
+
+    // ВАЖНО: строго по ТЗ — нормализованный payload
+    onUpdateProfile?.({
+      first_name: firstName || null,
+      last_name: lastName || null,
+      birth_date: birthDate || null,
+      gender: gender || null,
+    });
   };
 
   return (
@@ -89,39 +82,45 @@ function ProfileScreen({
 
         <form className="profile-form" onSubmit={handleSubmit}>
           <div className="form-field">
-            <label>Имя</label>
+            <label htmlFor="first_name">Имя</label>
             <input
+              id="first_name"
               type="text"
-              value={form.first_name}
-              onChange={handleChange("first_name")}
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="Ваше имя"
             />
           </div>
 
           <div className="form-field">
-            <label>Фамилия</label>
+            <label htmlFor="last_name">Фамилия</label>
             <input
+              id="last_name"
               type="text"
-              value={form.last_name}
-              onChange={handleChange("last_name")}
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="Ваша фамилия"
             />
           </div>
 
           <div className="form-field">
-            <label>Дата рождения</label>
+            <label htmlFor="birth_date">Дата рождения</label>
             <input
+              id="birth_date"
               type="date"
-              value={form.birth_date}
-              onChange={handleChange("birth_date")}
+              value={birthDate || ""}
+              onChange={(e) => setBirthDate(e.target.value)}
             />
           </div>
 
           <div className="form-field">
-            <label>Пол</label>
+            <label htmlFor="gender">Пол</label>
             <select
-              value={form.gender}
-              onChange={handleChange("gender")}
+              id="gender"
+              value={gender || ""}
+              onChange={(e) => setGender(e.target.value)}
             >
-              <option value="">Не указан</option>
+            <option value="">Не указан</option>
               <option value="male">Мужской</option>
               <option value="female">Женский</option>
               <option value="other">Другое</option>

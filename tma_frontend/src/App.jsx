@@ -4,7 +4,7 @@ import {
   fetchProfile,
   fetchSpreads,
   createAutoSpread,
-  updateProfile,
+  apiPost,
   fetchSpreadQuestions,
   askSpreadQuestion,
 } from "./api/client";
@@ -178,7 +178,6 @@ function App() {
           c &&
           card &&
           c.id === card.id &&
-          // position может быть undefined, поэтому сравниваем тоже аккуратно
           (c.position === card.position || c.position === undefined)
       );
       if (isDuplicate) return prev;
@@ -269,23 +268,15 @@ function App() {
     }
   }
 
-  // Обновление профиля (бизнес-логика, UI в ProfileScreen)
-  async function handleUpdateProfile(payload) {
+  // Обновление профиля — P1: прямой POST /profile и обновление стейта
+  async function handleUpdateProfile(update) {
     try {
-      setLoading(true);
-      setError(null);
-
-      const updatedProfile = await updateProfile(payload);
-
-      setProfile(updatedProfile);
-
-      setError("Профиль сохранён");
-      setTimeout(() => setError(null), 2000);
+      console.log("[TMA] Updating profile with payload:", update);
+      const response = await apiPost("/profile", update);
+      setProfile(response);
+      console.log("[TMA] Profile updated:", response);
     } catch (err) {
-      console.error("Update profile error:", err);
-      setError(err.message || "Не удалось обновить профиль");
-    } finally {
-      setLoading(false);
+      console.error("[TMA] Failed to update profile", err);
     }
   }
 
