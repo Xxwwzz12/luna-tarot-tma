@@ -1,4 +1,4 @@
-// src/App.jsx
+\// src/App.jsx
 import React, { useEffect, useState } from "react";
 import {
   apiGet,
@@ -98,7 +98,7 @@ function App() {
     const res = await apiGet("/profile");
 
     if (res?.ok && res.data) {
-      console.log("[TMA] Raw profile from API:", res.data); // лог сырого профиля
+      console.log("[TMA] Raw profile from API:", res.data);
       setProfile(res.data);
       console.log("[TMA] Profile loaded:", {
         user_id: res.data.user_id,
@@ -220,7 +220,7 @@ function App() {
 
       if (res?.ok && res.data) {
         const detail = res.data; // SpreadDetail от бэка
-        console.log("[TMA] New spread detail:", detail); // лог detail расклада
+        console.log("[TMA] New spread detail:", detail);
 
         setCurrentSpread(detail);
         setActiveTab("spreads");
@@ -265,18 +265,15 @@ function App() {
     }
   }
 
-  // Обновление профиля — через APIResponse { ok, data, error }
+  // 🔧 Обновление профиля — версия с доплогом New profile from API
   async function handleUpdateProfile(update) {
-    try {
-      console.log("[TMA] Updating profile with payload:", update);
-      const res = await apiPost("/profile", update);
-      console.log("[TMA] Profile updated:", res);
+    console.log("[TMA] Updating profile with payload:", update);
+    const res = await apiPost("/profile", update);
+    console.log("[TMA] Profile updated:", res);
 
-      if (res?.ok && res.data) {
-        setProfile(res.data);
-      }
-    } catch (err) {
-      console.error("[TMA] Failed to update profile", err);
+    if (res?.ok && res.data) {
+      console.log("[TMA] New profile from API:", res.data);
+      setProfile(res.data);
     }
   }
 
@@ -372,7 +369,7 @@ function App() {
       case "profile":
         return (
           <ProfileScreen
-            profile={profile} // важно: без .data
+            profile={profile}
             loading={loading}
             onUpdateProfile={handleUpdateProfile}
             theme={theme}

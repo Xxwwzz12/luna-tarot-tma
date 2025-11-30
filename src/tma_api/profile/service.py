@@ -16,11 +16,11 @@ class ProfileService:
     """
     Сервис профиля для TMA API.
 
-    Важно: публичный интерфейс остаётся прежним:
+    Публичный интерфейс:
       - get_or_create_profile(user_id: int, ...) -> ProfileModel
-      - update_profile(user_id: int, ...) -> ProfileModel
+      - update_profile(user_id: int, data: Any) -> ProfileModel
 
-    Внутри меняется только источник хранения:
+    Источник хранения:
       - PostgresProfileRepository при TMA_DB_BACKEND=postgres и наличии DATABASE_URL
       - UserDatabase во всех остальных случаях.
     """
@@ -53,8 +53,6 @@ class ProfileService:
                 logger.info("ProfileService: using PostgresProfileRepository")
                 return
             except Exception:
-                # Если не смогли поднять Postgres — логируем и
-                # падаем обратно на UserDatabase, чтобы не ломать прод.
                 logger.exception(
                     "Failed to init PostgresProfileRepository, falling back to UserDatabase"
                 )
@@ -71,12 +69,10 @@ class ProfileService:
         """
         Получить профиль пользователя или создать "скелет" при отсутствии.
 
-        Интерфейс метода остаётся тем же: первый аргумент — user_id,
-        остальные параметры как и раньше (username, first_name, last_name и т.п.)
-        передаются как именованные аргументы, и используются только при
-        создании новой записи.
-
         Возвращает ProfileModel (как и раньше).
+
+        defaults — данные, которые можно использовать при создании
+        новой записи (username, first_name, last_name, birth_date, gender).
         """
         raw = self._repo.get_profile(user_id)
 
@@ -84,8 +80,6 @@ class ProfileService:
             # Новая запись — собираем минимальный набор данных из defaults.
             new_data: dict[str, Any] = {
                 "user_id": user_id,
-                # эти ключи безопасны: если чего-то нет в defaults,
-                # просто запишется None
                 "username": defaults.get("username"),
                 "first_name": defaults.get("first_name"),
                 "last_name": defaults.get("last_name"),
@@ -96,34 +90,37 @@ class ProfileService:
             # репозиторий сам проставит created_at / updated_at
             raw = self._repo.upsert_profile(user_id, new_data)
 
-        # На этом уровне мы работаем только с "сырыми" dict,
-        # а преобразование в Pydantic-модель оставляем ProfileModel.
         return ProfileModel(**raw)
 
-    def update_profile(self, user_id: int, payload: Any) -> ProfileModel:
+    def update_profile(self, user_id: int, data: Any) -> ProfileModel:
         """
-        Обновить профиль пользователя.
+        Обновить профиль пользователя и вернуть полный ProfileModel.
 
-        Интерфейс сохраняем максимально гибким, чтобы не ломать существующий
-        код в роутере:
+        Цель по ТЗ:
+          1) сохранить изменения в user_db / репозитории;
+          2) перечитать профиль (с age, zodiac и т.п.) и вернуть его.
 
-        - payload может быть:
-            * Pydantic-моделью (ProfileUpdateIn и т.п.) с методом .dict();
-            * обычным dict.
+        data может быть:
+          - Pydantic-моделью (ProfileUpdateIn и т.п.) с методом .dict();
+          - обычным dict.
         """
-        # Унифицируем payload → dict с учётом exclude_unset, если это Pydantic.
-        if hasattr(payload, "dict"):
-            # Pydantic BaseModel: используем только переданные поля.
-            data: dict[str, Any] = payload.dict(exclude_unset=True)
-        elif isinstance(payload, dict):
-            data = dict(payload)
+        # 1) нормализуем payload → dict
+        if hasattr(data, "dict"):
+            payload: dict[str, Any] = data.dict(exclude_unset=True)
+        elif isinstance(data, dict):
+            payload = dict(data)
         else:
             raise TypeError(
-                "update_profile payload must be a dict or have a .dict() method"
+                "update_profile data must be a dict or have a .dict() method"
             )
 
-        # user_id — источник истины, не даём перезаписать его из payload.
-        data["user_id"] = user_id
+        # user_id всегда берём из аргумента, не даём перезаписать его из payload
+        payload["user_id"] = user_id
 
-        raw = self._repo.upsert_profile(user_id, data)
-        return ProfileModel(**raw)
+        # 1) сохраняем изменения
+        self._repo.upsert_profile(user_id, payload)
+
+        # 2) перечитываем профиль тем же путём, что и для GET /profile
+        # (через get_or_create_profile, чтобы вся логика age/zodiac и т.п.
+        #  оставалась централизованной)
+        return self.get_or_create_profile(user_id)

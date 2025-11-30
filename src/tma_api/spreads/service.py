@@ -20,8 +20,8 @@ from .repository import (
     InMemorySpreadRepository,
     SQLiteSpreadRepository,
 )
-from .postgres_repository import PostgresSpreadRepository  # ✅ новый импорт
-from ..tarot_deck import draw_random_cards  # обновлённый draw_random_cards
+from .postgres_repository import PostgresSpreadRepository
+from ..tarot_deck import draw_random_cards
 
 logger = logging.getLogger(__name__)
 
@@ -288,41 +288,26 @@ class SpreadService:
     # _build_cards: сервер сам выбирает карты из своей колоды.
     def _build_cards(self, spread_type: str) -> List[Dict[str, Any]]:
         """
-        Используем обновлённый draw_random_cards и приводим
-        карты к "плоскому" dict-формату, который дальше уходит:
-        - в репозиторий (_repo.save_spread),
-        - в AI,
-        - в сборку CardModel.
+        Используем draw_random_cards и берём карты в том виде, как их отдаёт tarot_deck,
+        добавляя только is_reversed.
 
-        Контракт с фронтом:
-        - карты выбираются ТОЛЬКО на бэке, на основе внутренней колоды;
-        - фронтовая карусель — чистый визуальный/ритуальный элемент;
-        - POST /spreads не зависит от того, какие карты пользователь «щёлкал» на фронте
-          (до будущих доработок интерактива).
+        Контракт:
+        - cards — это те же словари, что возвращает tarot_deck (id, code, name, suit, arcana,
+          image_url, и любые другие поля);
+        - мы НЕ обрезаем структуру до {name, is_reversed};
+        - добавляем/переопределяем только флаг is_reversed.
         """
-        if spread_type == "one":
-            count = 1
-        else:
-            count = 3
-
+        count = 1 if spread_type == "one" else 3
         raw_cards = draw_random_cards(count)
 
-        cards_payload: List[Dict[str, Any]] = []
-        for card in raw_cards:
-            is_reversed = bool(random.getrandbits(1))
+        cards: List[Dict[str, Any]] = []
+        for c in raw_cards:
+            card = dict(c)  # копируем все поля как есть
+            # случайный перевёрнутый флаг
+            card["is_reversed"] = bool(random.getrandbits(1))
+            cards.append(card)
 
-            cards_payload.append(
-                {
-                    "id": card.get("id"),
-                    "name": card.get("name"),
-                    "suit": card.get("suit"),
-                    "arcana": card.get("type"),  # major/minor
-                    "image_url": card.get("image_url"),
-                    "is_reversed": is_reversed,
-                }
-            )
-
-        return cards_payload
+        return cards
 
     # AUTO-расклад
     async def create_auto_spread(
@@ -392,14 +377,15 @@ class SpreadService:
         created_at = _now_iso()
         effective_category = normalized_category or "general"
 
-        # Структура записи для репозитория
+        # Структура записи для репозитория:
+        # cards — ПОЛНЫЕ словари карт, сохраняем без обрезки.
         record: Dict[str, Any] = {
             # id задаст репозиторий
             "user_id": user_id,
             "spread_type": spread_type,
             "category": effective_category,   # daily/general
             "user_question": user_question,   # вопрос ДО расклада
-            "cards": cards_payload,           # raw-пэйлоад колоды
+            "cards": cards_payload,           # полные карточки
             "interpretation": interpretation,
             "created_at": created_at,
         }
@@ -418,15 +404,8 @@ class SpreadService:
             created_at,
         )
 
-        # Для ответа API собираем CardModel (минимальный вид)
-        cards_models = [
-            CardModel(
-                position=i + 1,
-                name=c.get("name") or "",
-                is_reversed=bool(c.get("is_reversed")),
-            )
-            for i, c in enumerate(cards_payload)
-        ]
+        # ВАЖНО: в API отдаём ПОЛНЫЕ карточки, как в tarot_deck.
+        cards_models = [CardModel(**c) for c in cards_payload]
 
         return SpreadDetail(
             id=spread_id,
@@ -582,20 +561,19 @@ class SpreadService:
         Только через repo.get_spread(spread_id) и с проверкой владельца:
         - если расклад не найден или принадлежит другому пользователю —
           кидаем ValueError("spread_not_found"), роутер превратит в 404/400.
+
+        ВАЖНО:
+        - cards в репозитории должны быть теми же словарями, что вернул tarot_deck;
+        - в API отдаём CardModel(**card_dict), без кастомного урезания структуры.
         """
         raw = self._repo.get_spread(spread_id)
         if not raw or raw.get("user_id") != user_id:
             raise ValueError("spread_not_found")
 
         cards_payload = raw.get("cards") or []
-        cards_models = [
-            CardModel(
-                position=i + 1,
-                name=c.get("name") or "",
-                is_reversed=bool(c.get("is_reversed")),
-            )
-            for i, c in enumerate(cards_payload)
-        ]
+
+        # Здесь тоже — полные карты Deck → CardModel.
+        cards_models = [CardModel(**c) for c in cards_payload]
 
         return SpreadDetail(
             id=raw["id"],

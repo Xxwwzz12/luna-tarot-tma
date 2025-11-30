@@ -10,16 +10,28 @@ from pydantic import BaseModel, Field
 # 1. Модели раскладов (для истории и детальных данных)
 
 class CardModel(BaseModel):
-    position: int
-    name: str
-    is_reversed: bool = False
+    """
+    Модель карты, используемая в SpreadDetail.cards.
+
+    Важно: должна содержать code и image_url,
+    чтобы фронт мог отрисовать реальные изображения.
+    """
+    code: str                  # внутренний код карты (например, "maj_00", "cups_10")
+    name: str                  # человекочитаемое название
+    is_reversed: bool          # перевёрнута ли карта
+    image_url: str             # ссылка на картинку (или fallback)
+
+    # необязательные поля для возможного расширения
+    arcana: str | None = None  # major / minor
+    suit: str | None = None
+    rank: str | None = None
 
 
 class SpreadListItem(BaseModel):
     id: int
     spread_type: str
     category: str
-    created_at: str  # ISO date string
+    created_at: str  # ISO
     short_preview: str | None = None
     has_questions: bool = False
     interpretation: str | None = None
@@ -29,41 +41,26 @@ class SpreadDetail(BaseModel):
     id: int
     spread_type: str
     category: str | None
-    question: str | None  # первичный вопрос пользователя, если был
-    cards: list[CardModel]
+    question: str | None              # первичный вопрос пользователя
+    cards: list[CardModel]            # ← теперь обязательно CardModel с image_url/code
     interpretation: str | None = None
     created_at: str
-    # опционально: вопросы по уже готовому раскладу
     questions: list["SpreadQuestionModel"] | None = None
 
 
-# 2. Модель создания расклада (POST /spreads)
+# 2. Создание расклада
 
 class SpreadCreateIn(BaseModel):
     """
-    Входная модель для POST /spreads.
-
-    mode:
-      - "auto" — сразу генерируем расклад и интерпретацию;
-      - "interactive" — интерактивный выбор карт.
-
-    spread_type:
-      - "one"   — 1 карта;
-      - "three" — 3 карты.
-
-    category:
-      - категория для 3-картного авто-расклада (если нет собственного вопроса).
-
-    question:
-      - вопрос ДО расклада, вместо категории, только для 3-картного расклада.
+    Вопрос ДО расклада — вместо категории (только для 3-картного расклада).
     """
     mode: Literal["auto", "interactive"]
     spread_type: Literal["one", "three"]
     category: str | None = None
-    question: str | None = None  # вопрос до расклада, вместо категории (только для 3-карт)
+    question: str | None = None  # вопрос до расклада, вместо категории
 
 
-# 3. Модели интерактивного режима (mode="interactive")
+# 3. Интерактивный режим
 
 class SpreadSessionStart(BaseModel):
     session_id: str
@@ -74,20 +71,15 @@ class SpreadSessionStart(BaseModel):
     selected_cards: Dict[int, CardModel] = Field(default_factory=dict)
 
 
-# 4. Модели выбора карты (interactive)
-
 class SpreadSelectCardIn(BaseModel):
     position: int = Field(..., ge=1)
     choice_index: int = Field(..., ge=1)
 
 
-# 5. Модели вопросов
+# 4. Вопросы
 
 class SpreadQuestionIn(BaseModel):
-    """
-    Вопрос по УЖЕ ГОТОВОМУ раскладу (POST /spreads/{spread_id}/questions).
-    """
-    question: str
+    question: str  # вопрос по ГОТОВОМУ раскладу
 
 
 class SpreadQuestionModel(BaseModel):
@@ -100,13 +92,11 @@ class SpreadQuestionModel(BaseModel):
     created_at: str
 
 
-# 6. Модель списка вопросов
-
 class SpreadQuestionsList(BaseModel):
     items: list[SpreadQuestionModel]
 
 
-# 7. Пагинация (для GET /spreads)
+# 5. Пагинация
 
 class PaginatedSpreads(BaseModel):
     items: list[SpreadListItem]
