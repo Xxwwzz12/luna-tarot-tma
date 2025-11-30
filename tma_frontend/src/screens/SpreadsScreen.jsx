@@ -49,6 +49,7 @@ function SpreadsScreen({
 
     const trimmed = (question || "").trim();
 
+    // Формирование payload под /spreads
     const payload = {
       mode: "auto",
       spread_type: spreadType || "one",
@@ -57,12 +58,15 @@ function SpreadsScreen({
     };
 
     if (payload.spread_type === "one") {
+      // Карта дня — фиксированная категория
       payload.category = "daily";
     } else if (payload.spread_type === "three") {
       if (trimmed) {
+        // Пользовательский вопрос вместо категории
         payload.question = trimmed;
         payload.category = null;
       } else {
+        // Категория из чипов, fallback — general
         payload.category = category || "general";
       }
     }
@@ -162,7 +166,7 @@ function SpreadsScreen({
         )}
       </section>
 
-      {/* Выбор карт */}
+      {/* Выбор карт — режим picker */}
       <section className="card card-cards">
         <h2>Выбор карт</h2>
         <p className="muted">
@@ -185,7 +189,7 @@ function SpreadsScreen({
       {/* Кнопка создания расклада */}
       <section className="card card-actions">
         <button
-          type="button"       {/* ← ключевой фикс, предотвращает двойной POST */}
+          type="button"
           className="btn-primary"
           disabled={isCreateDisabled}
           onClick={handleCreateSpreadClick}
@@ -199,7 +203,7 @@ function SpreadsScreen({
         </p>
       </section>
 
-      {/* Текущий расклад */}
+      {/* Текущий расклад — режим viewer */}
       <section className="card section spread-current">
         <div className="spread-current-header">
           <p className="section-title">Текущий расклад</p>
