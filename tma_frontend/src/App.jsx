@@ -98,7 +98,7 @@ function App() {
     const res = await apiGet("/profile");
 
     if (res?.ok && res.data) {
-      console.log("[TMA] Raw profile from API:", res.data); // доп. лог структуры профиля
+      console.log("[TMA] Raw profile from API:", res.data); // лог сырого профиля
       setProfile(res.data);
       console.log("[TMA] Profile loaded:", {
         user_id: res.data.user_id,
@@ -204,7 +204,7 @@ function App() {
     });
   }
 
-  // Создание расклада (POST /спreads) — payload приходит из SpreadsScreen
+  // Создание расклада (POST /spreads) — payload приходит из SpreadsScreen
   async function handleCreateSpread(payload) {
     try {
       if (!payload) {
@@ -220,6 +220,7 @@ function App() {
 
       if (res?.ok && res.data) {
         const detail = res.data; // SpreadDetail от бэка
+        console.log("[TMA] New spread detail:", detail); // лог detail расклада
 
         setCurrentSpread(detail);
         setActiveTab("spreads");
@@ -371,7 +372,7 @@ function App() {
       case "profile":
         return (
           <ProfileScreen
-            profile={profile} // ВАЖНО: без .data, сюда летит уже res.data
+            profile={profile} // важно: без .data
             loading={loading}
             onUpdateProfile={handleUpdateProfile}
             theme={theme}

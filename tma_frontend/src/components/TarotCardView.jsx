@@ -3,45 +3,37 @@
 import React from "react";
 
 function getCardImageSrc(card) {
-  const fallback = "/images/tarot/back.png";
-  if (!card) return fallback;
+  if (!card) return "/images/tarot/back.png";
 
-  // 1) Прямой URL из объекта карты (если когда-нибудь начнём его отдавать с бэка)
-  const direct = card.image_url || card.imageUrl || card.image || null;
-  if (direct) {
-    // Поддерживаем как "images/..." так и "/images/..."
-    return direct.startsWith("/") ? direct : `/${direct}`;
+  // 1) Прямой URL, если когда-нибудь придёт с бэка
+  const direct =
+    card.image_url ||
+    card.imageUrl ||
+    card.image ||
+    null;
+
+  if (direct) return direct;
+
+  // 2) URL по card.code
+  const rawCode = String(card.code || card.slug || "").trim();
+  if (rawCode) {
+    const normalized = rawCode.toLowerCase();
+    // ТЗ 3.1 — кладём именно в /images/tarot/${code}.jpg
+    return `/images/tarot/${normalized}.jpg`;
   }
 
-  // 2) Пытаемся построить путь по коду карты
-  const rawCode = String(card.code || card.slug || card.id || "").trim();
-  if (!rawCode) return fallback;
-
-  const normalized = rawCode.toLowerCase();
-
-  // Младшие арканы: wands_*, cups_*, swords_*, pentacles_*
-  const minorPrefixes = ["wands_", "cups_", "swords_", "pentacles_"];
-  const isMinor = minorPrefixes.some((prefix) =>
-    normalized.startsWith(prefix),
-  );
-
-  // По табличке:
-  // major → /images/major/{code}.jpg
-  // minor → /images/minor/{code}.jpg
-  const basePath = isMinor ? "/images/minor" : "/images/major";
-  return `${basePath}/${normalized}.jpg`;
+  return "/images/tarot/back.png";
 }
 
 export default function TarotCardView({ card, positionLabel }) {
   if (!card) return null;
 
   const imageSrc = getCardImageSrc(card);
+
   const isReversed = !!card?.is_reversed;
 
   const imgClassName =
     "tarot-card-image" + (isReversed ? " tarot-card-image-reversed" : "");
-
-  const hasName = !!card?.name;
 
   return (
     <div className="tarot-card-view">
@@ -52,16 +44,19 @@ export default function TarotCardView({ card, positionLabel }) {
       )}
 
       <div className="tarot-card-image-wrap">
-        <img src={imageSrc} alt={card?.name || "Таро"} className={imgClassName} />
+        <img
+          src={imageSrc}
+          alt={card?.name || "Таро"}
+          className={imgClassName}
+        />
       </div>
 
       <div className="tarot-card-caption">
-        {hasName && (
-          <div className="tarot-card-name">
-            {card.name}
-          </div>
+        {card?.name && (
+          <div className="tarot-card-name">{card.name}</div>
         )}
-        {hasName && (
+
+        {card?.name && (
           <div className="tarot-card-orientation muted small">
             {card.name} {isReversed ? "(перевернутая)" : "(прямая)"}
           </div>

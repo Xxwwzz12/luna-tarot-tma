@@ -49,7 +49,6 @@ function SpreadsScreen({
 
     const trimmed = (question || "").trim();
 
-    // Формирование payload
     const payload = {
       mode: "auto",
       spread_type: spreadType || "one",
@@ -96,7 +95,7 @@ function SpreadsScreen({
 
         <div className="pill-toggle">
           <button
-            type="button"  // ← важно: кнопка, не submit
+            type="button"
             className={
               spreadType === "one" ? "pill-option active" : "pill-option"
             }
@@ -107,7 +106,7 @@ function SpreadsScreen({
           </button>
 
           <button
-            type="button"  // ← важно
+            type="button"
             className={
               spreadType === "three" ? "pill-option active" : "pill-option"
             }
@@ -135,7 +134,7 @@ function SpreadsScreen({
               {CATEGORY_OPTIONS.map((opt) => (
                 <button
                   key={opt.code}
-                  type="button"   // ← тоже безопасность
+                  type="button"
                   className={
                     category === opt.code ? "chip chip-active" : "chip"
                   }
@@ -186,7 +185,7 @@ function SpreadsScreen({
       {/* Кнопка создания расклада */}
       <section className="card card-actions">
         <button
-          type="button"   // ← ключевая правка ТЗ 5.1
+          type="button"       {/* ← ключевой фикс, предотвращает двойной POST */}
           className="btn-primary"
           disabled={isCreateDisabled}
           onClick={handleCreateSpreadClick}

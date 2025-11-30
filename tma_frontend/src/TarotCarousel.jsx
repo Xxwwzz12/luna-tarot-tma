@@ -199,7 +199,7 @@ export default function TarotCarousel(props) {
       );
     }
 
-    // Несколько карт — листаем TarotCardView (никаких текстовых списков!)
+    // Несколько карт — листаем TarotCardView
     const current = cards[currentIndex];
 
     return (
