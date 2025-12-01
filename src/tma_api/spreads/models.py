@@ -12,11 +12,12 @@ class CardModel(BaseModel):
     """
     Модель карты, используемая в SpreadDetail.cards.
     """
-    code: str
-    name: str
-    is_reversed: bool
-    image_url: str
+    code: str                 # внутренний код карты (совпадает с tarot_deck.json)
+    name: str                 # человекочитаемое название
+    is_reversed: bool         # перевёрнута ли карта
+    image_url: str            # итоговая ссылка на картинку
 
+    # дополнительные (необязательные) атрибуты
     arcana: str | None = None
     suit: str | None = None
     rank: str | None = None
@@ -36,10 +37,12 @@ class SpreadDetail(BaseModel):
     id: int
     spread_type: str
     category: str | None
-    question: str | None                     # первичный вопрос пользователя (до расклада)
+    # первичный вопрос пользователя ДО расклада (только для three)
+    question: str | None
     cards: list[CardModel]
     interpretation: str | None = None
     created_at: str
+    # вопросы ПО уже готовому раскладу (опционально)
     questions: list["SpreadQuestionModel"] | None = None
 
 
@@ -49,33 +52,43 @@ class SpreadCreateIn(BaseModel):
     """
     Входная модель для POST /spreads.
 
-    Правила:
+    Смысл полей:
 
-    • mode="interactive":
-        - фронт обязан передать cards: список кодов выбранных карт (1 или 3)
-        - spread_type="one" → category / question игнорируются (жёстко "Карта дня")
+    mode:
+      - "auto"        — карты выбирает backend сам (по правилам/вероятностям);
+      - "interactive" — карты выбирает пользователь и передаёт их в cards.
 
-    • mode="auto":
-        - cards игнорируется (карты выбирает backend случайно)
+    spread_type:
+      - "one"   — «Карта дня»;
+      - "three" — «Прошлое / Настоящее / Будущее».
 
-    • spread_type="one":
-        - category -> backend сам подставляет "daily" (если не пришла)
-        - question должен быть None
+    category:
+      - используется ТОЛЬКО для spread_type="three" без вопроса;
+      - для spread_type="one" игнорируется — backend всегда подставляет "daily".
 
-    • spread_type="three":
-        - либо category (готовая тема)
-        - либо question (свой вопрос ДО расклада)
-        - category и question вместе передавать нельзя
+    question:
+      - используется для spread_type="three" ВМЕСТО категории (свой вопрос до расклада);
+      - для spread_type="one" игнорируется (должно быть null / не задаётся).
+
+    cards:
+      - используется ТОЛЬКО для mode="interactive";
+      - список code карт (строки) в том порядке, как их выбрал пользователь;
+      - для spread_type="one" длина должна быть ровно 1;
+      - для spread_type="three" длина должна быть ровно 3;
+      - для mode="auto" либо не передаётся, либо должна быть None (полностью игнорируется).
+
+    Важно:
+      - для трёхкартного расклада category и question взаимоисключающие:
+        либо категория, либо свой вопрос, но не оба сразу.
+      - «Карта дня» всегда имеет category="daily" и НЕ использует question.
     """
 
     mode: Literal["auto", "interactive"]
     spread_type: Literal["one", "three"]
 
-    category: str | None = None              # категория для 3-картного авто-расклада
-    question: str | None = None              # вопрос ВМЕСТО категории (3-карты)
-
-    cards: list[str] | None = None           # НОВОЕ: список кодов выбранных карт (interactive)
-                                             # типичные коды: ["maj_00", "cups_10", "wands_05"]
+    category: str | None = None      # категория для 3-картного авто-расклада
+    question: str | None = None      # вопрос ВМЕСТО категории (только для three)
+    cards: list[str] | None = None   # коды выбранных карт (interactive; len=1 или 3)
 
 
 # 3. Интерактивный режим
@@ -97,6 +110,7 @@ class SpreadSelectCardIn(BaseModel):
 # 4. Вопросы к ГОТОВОМУ раскладу
 
 class SpreadQuestionIn(BaseModel):
+    # Вопрос по уже готовому раскладу (POST /spreads/{spread_id}/questions)
     question: str
 
 

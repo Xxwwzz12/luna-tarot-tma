@@ -8,7 +8,7 @@ from datetime import datetime, date
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import HTTPException  # для ошибок режима/карт
+from fastapi import HTTPException
 
 from .models import (
     CardModel,
@@ -303,12 +303,7 @@ class SpreadService:
         - иначе                → 400 Unknown spread mode.
         """
         if body.mode == "auto":
-            return await self.create_auto_spread(
-                user_id=user_id,
-                spread_type=body.spread_type,
-                category=body.category,
-                question=body.question,
-            )
+            return await self.create_auto_spread(user_id, body)
         elif body.mode == "interactive":
             return await self._create_interactive_spread(user_id, body)
         else:
@@ -342,37 +337,37 @@ class SpreadService:
     async def create_auto_spread(
         self,
         user_id: int,
-        spread_type: str,
-        category: str | None = None,
-        question: str | None = None,
+        body: SpreadCreateIn,
     ) -> SpreadDetail:
         """
         Создать авто-расклад, вызвать AI и сохранить интерпретацию через self._repo.
 
         Контракт с фронтом:
-        - backend САМ выбирает карты из своей колоды (через _build_cards);
+        - backend САМ выбирает карты из своей колоды (через _build_cards → draw_random_cards);
         - фронтовая карусель — визуальный ритуал, не влияющий на результат POST /spreads;
-        - структура запроса от фронта не содержит выбранных карт, только параметры расклада
-          (spread_type, category/question);
+        - фронт не передаёт выбранные карты, только параметры расклада (mode, spread_type, category, question);
         - в ответ приходит уже готовый расклад с картами и интерпретацией.
 
-        ВАЖНО:
-        - для spread_type == "one" (карта дня) мы жёстко нормализуем значения:
-          category = "daily", user_question = None,
-          независимо от того, что пришло с фронта;
-        - для остальных типов:
-          category берём из аргумента category,
-          user_question — из аргумента question.
+        Логика категорий/вопроса (упрощённая версия):
+
+        if body.spread_type == "one":
+            category = "daily"
+            question = None
+        else:
+            category = body.category
+            question = body.question
         """
         user_ctx = _get_user_ctx(user_id)
+
+        spread_type = body.spread_type
 
         # Жёсткая нормализация "карты дня"
         if spread_type == "one":
             normalized_category: Optional[str] = "daily"
             user_question: Optional[str] = None
         else:
-            normalized_category = category
-            user_question = question
+            normalized_category = body.category
+            user_question = body.question
 
         # Явная обработка ошибок колоды
         try:
@@ -381,7 +376,6 @@ class SpreadService:
             logger.exception(
                 "Failed to build cards for spread_type=%s: %s", spread_type, e
             )
-            # ValueError → роутер превратит в 400 с понятным APIError
             raise ValueError(f"tarot_deck_error: {e}") from e
 
         # Пытаемся получить интерпретацию через AI
@@ -408,8 +402,6 @@ class SpreadService:
         created_at = _now_iso()
         effective_category = normalized_category or "general"
 
-        # Структура записи для репозитория:
-        # cards — ПОЛНЫЕ словари карт, сохраняем без обрезки.
         record: Dict[str, Any] = {
             "user_id": user_id,
             "spread_type": spread_type,
@@ -421,11 +413,9 @@ class SpreadService:
             "mode": "auto",
         }
 
-        # Сохраняем через репозиторий и получаем id
         spread_id = self._repo.save_spread(record)
-        record["id"] = spread_id  # на случай, если repo сам сгенерировал id
+        record["id"] = spread_id
 
-        # DEV-лог для дебага истории
         logger.info(
             "Created AUTO spread: user_id=%s spread_id=%s spread_type=%s category=%s created_at=%s",
             user_id,
@@ -435,7 +425,6 @@ class SpreadService:
             created_at,
         )
 
-        # ВАЖНО: в API отдаём ПОЛНЫЕ карточки, как в tarot_deck.
         cards_models = [CardModel(**c) for c in cards_payload]
 
         return SpreadDetail(
@@ -457,8 +446,11 @@ class SpreadService:
         """
         Интерактивный расклад:
         - карты выбирает фронт (по code), мы лишь проверяем и тянем их из tarot_deck;
-        - логика категоризации/вопроса такая же, как в авто-режиме:
-          one → daily/None, остальные — category/question из body;
+        - логика категоризации/вопроса для three такая:
+          * one → category="daily", user_question=None
+          * three + непустой question → user_question = question, category = None (в AI)
+          * three + пустой question   → category = body.category или "general",
+                                       user_question = None
         - дальше — та же схема, что и для авто: AI → fallback → сохранение → SpreadDetail.
         """
         user_ctx = _get_user_ctx(user_id)
@@ -471,13 +463,26 @@ class SpreadService:
                 detail=f"Interactive spread requires exactly {needed} cards, got {len(codes)}",
             )
 
-        # Жёсткая нормализация "карты дня"
-        if body.spread_type == "one":
+        spread_type = body.spread_type
+
+        # 🔧 Нормализация category / question по ТЗ
+        if spread_type == "one":
+            # Карта дня — как и в авто: daily + без вопроса
             normalized_category: Optional[str] = "daily"
             user_question: Optional[str] = None
         else:
-            normalized_category = body.category
-            user_question = body.question
+            # spread_type == "three" (или другой многокарточный в будущем)
+            q = (body.question or "").strip() if body.question is not None else ""
+            if q:
+                # Есть явный вопрос → трактуем как "вопрос ДО расклада",
+                # категорию для AI не задаём (None).
+                normalized_category = None
+                user_question = body.question
+            else:
+                # Вопроса нет → используем категорию (или general по умолчанию),
+                # user_question остаётся пустым.
+                normalized_category = body.category or "general"
+                user_question = None
 
         # Собираем карточки по code из колоды
         cards_payload: List[Dict[str, Any]] = []
@@ -489,7 +494,6 @@ class SpreadService:
                     detail=f"Unknown card code: {code}",
                 )
 
-            # Приводим к формату, совместимому с CardModel и авто-веткой
             card_dict: Dict[str, Any] = {
                 "id": card_data.get("id"),
                 "code": card_data.get("code"),
@@ -497,7 +501,7 @@ class SpreadService:
                 "suit": card_data.get("suit"),
                 "arcana": card_data.get("type"),  # major/minor
                 "image_url": card_data.get("image_url"),
-                # Для интерактива пока не даём перевёрнутость, можно позже добавить в UI
+                # Для интерактива пока без перевёрнутости (можно расширить позже)
                 "is_reversed": False,
             }
             cards_payload.append(card_dict)
@@ -505,7 +509,7 @@ class SpreadService:
         # Пытаемся получить интерпретацию через AI
         try:
             interpretation = await _generate_ai_interpretation(
-                spread_type=body.spread_type,
+                spread_type=spread_type,
                 category=normalized_category,
                 cards_payload=cards_payload,
                 question=user_question,
@@ -516,18 +520,19 @@ class SpreadService:
 
         if not interpretation or not interpretation.strip():
             interpretation = _generate_basic_interpretation(
-                spread_type=body.spread_type,
+                spread_type=spread_type,
                 category=normalized_category,
                 user_question=user_question,
             )
         interpretation = interpretation.strip()
 
         created_at = _now_iso()
+        # Для ответа на фронт всё равно отдаём осмысленную категорию
         effective_category = normalized_category or "general"
 
         record: Dict[str, Any] = {
             "user_id": user_id,
-            "spread_type": body.spread_type,
+            "spread_type": spread_type,
             "category": effective_category,
             "user_question": user_question,
             "cards": cards_payload,
@@ -543,7 +548,7 @@ class SpreadService:
             "Created INTERACTIVE spread: user_id=%s spread_id=%s spread_type=%s category=%s created_at=%s",
             user_id,
             spread_id,
-            body.spread_type,
+            spread_type,
             effective_category,
             created_at,
         )
@@ -552,7 +557,7 @@ class SpreadService:
 
         return SpreadDetail(
             id=spread_id,
-            spread_type=body.spread_type,
+            spread_type=spread_type,
             category=effective_category,
             created_at=created_at,
             cards=cards_models,
@@ -665,9 +670,6 @@ class SpreadService:
                 interpretation[:140].rstrip() if interpretation else None
             )
 
-            # Категория в списке:
-            # - one → daily (независимо от того, что лежит в raw.category)
-            # - иначе — сохранённая или general
             if s.get("spread_type") == "one":
                 item_category = "daily"
             else:
@@ -715,7 +717,6 @@ class SpreadService:
 
         cards_payload = raw.get("cards") or []
 
-        # Здесь тоже — полные карты Deck → CardModel.
         cards_models = [CardModel(**c) for c in cards_payload]
 
         return SpreadDetail(
@@ -741,7 +742,6 @@ class SpreadService:
         Здесь question — уточнение к раскладу (не вопрос до расклада).
         Ответ и статус на этом этапе: answer=None, status="pending".
         """
-        # Проверяем, что расклад существует и принадлежит user_id
         raw_spread = self._repo.get_spread(spread_id)
         if not raw_spread or raw_spread.get("user_id") != user_id:
             raise ValueError("spread_not_found")
@@ -773,7 +773,6 @@ class SpreadService:
             raise ValueError("spread_not_found")
 
         rows = self._repo.list_questions(spread_id)
-        # На всякий случай сортируем по created_at от старых к новым
         rows_sorted = sorted(rows, key=lambda r: r.get("created_at") or "")
 
         items = [SpreadQuestionModel(**row) for row in rows_sorted]
