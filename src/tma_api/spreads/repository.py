@@ -10,7 +10,7 @@ class SpreadRepository(Protocol):
     """
     Абстрактный интерфейс репозитория раскладов.
 
-    Важно: сигнатуры синхронизированы со всеми реализациями.
+    Реализации: InMemorySpreadRepository, SQLiteSpreadRepository.
     """
 
     def save_spread(self, data: dict[str, Any]) -> int:
@@ -22,7 +22,7 @@ class SpreadRepository(Protocol):
     def get_spread(self, spread_id: int) -> dict[str, Any] | None:
         """
         Получить один расклад по ID (без проверки user_id).
-        Проверка "чей расклад" должна быть на уровне сервиса.
+        Проверка принадлежности делается в сервисе.
         """
         ...
 
@@ -46,7 +46,7 @@ class SpreadRepository(Protocol):
     def list_questions(self, spread_id: int) -> list[dict[str, Any]]:
         """
         Вернуть список вопросов по spread_id (без проверки user_id).
-        Проверка "чужой вопрос" — на уровне сервиса.
+        Проверка делается в сервисе через get_spread().
         """
         ...
 
@@ -55,9 +55,7 @@ class InMemorySpreadRepository(SpreadRepository):
     """
     Простая in-memory реализация репозитория.
 
-    Сейчас это по сути инкапсулирует текущий подход с _SPREADS / _QUESTIONS,
-    но в одном месте и с понятным интерфейсом. Позже можно заменить или
-    дополнить SQL-реализацией.
+    Нужна как дефолт/заглушка и для локальной разработки без БД.
     """
 
     def __init__(self) -> None:
@@ -69,7 +67,7 @@ class InMemorySpreadRepository(SpreadRepository):
         self._questions: Dict[int, Dict[str, Any]] = {}
         self._question_index: int = 0
 
-    # ---- Внутренние helpers ----
+    # ---- helpers ----
 
     def _next_spread_id(self) -> int:
         self._spread_index += 1
@@ -82,11 +80,6 @@ class InMemorySpreadRepository(SpreadRepository):
     # ---- SpreadRepository implementation ----
 
     def save_spread(self, data: dict[str, Any]) -> int:
-        """
-        Сохраняем расклад.
-
-        Если id не передан в data — создаём новый, иначе перезаписываем существующий.
-        """
         spread_id = data.get("id")
         if not isinstance(spread_id, int):
             spread_id = self._next_spread_id()
@@ -104,18 +97,11 @@ class InMemorySpreadRepository(SpreadRepository):
         offset: int,
         limit: int,
     ) -> tuple[int, list[dict[str, Any]]]:
-        """
-        Фильтрация по user_id + простая пагинация.
-
-        Сортируем по created_at (если есть), иначе по id (по убыванию).
-        """
         items: List[Dict[str, Any]] = [
             s for s in self._spreads.values() if s.get("user_id") == user_id
         ]
 
         def _sort_key(item: Dict[str, Any]):
-            # created_at ожидается строкой ISO, но здесь можно оставить как есть.
-            # Если поля нет — сортируем по id.
             return item.get("created_at") or item.get("id") or 0
 
         items.sort(key=_sort_key, reverse=True)
@@ -130,14 +116,6 @@ class InMemorySpreadRepository(SpreadRepository):
         return total, sliced
 
     def save_question(self, data: dict[str, Any]) -> int:
-        """
-        Сохраняем вопрос к раскладу.
-
-        Ожидаются поля:
-        - spread_id
-        - text / question
-        - (опционально) created_at и т.п.
-        """
         question_id = data.get("id")
         if not isinstance(question_id, int):
             question_id = self._next_question_id()
@@ -147,9 +125,6 @@ class InMemorySpreadRepository(SpreadRepository):
         return question_id
 
     def list_questions(self, spread_id: int) -> list[dict[str, Any]]:
-        """
-        Возвращаем все вопросы для указанного расклада, по id по возрастанию.
-        """
         items: List[Dict[str, Any]] = [
             q for q in self._questions.values() if q.get("spread_id") == spread_id
         ]
@@ -161,9 +136,12 @@ class SQLiteSpreadRepository(SpreadRepository):
     """
     SQLite-реализация SpreadRepository.
 
-    ВАЖНО по ТЗ 7.1:
-    - list_spreads делает SELECT только по текущему user_id:
-      SELECT * FROM spreads WHERE user_id = ? ORDER BY created_at DESC, id DESC
+    ТЗ 9.1:
+      - история раскладов только по конкретному user_id (WHERE user_id = ?)
+
+    ТЗ 9.2:
+      - вопросы только по конкретному spread_id (WHERE spread_id = ?)
+      - контроль принадлежности расклада пользователю делается в сервисе.
     """
 
     def __init__(self, db_path: str = "tma.sqlite3") -> None:
@@ -182,34 +160,29 @@ class SQLiteSpreadRepository(SpreadRepository):
         """
         Примитивный upsert в таблицу spreads.
 
-        Ожидается, что таблица содержит как минимум:
-        id INTEGER PRIMARY KEY,
-        user_id INTEGER,
-        spread_type TEXT,
-        category TEXT,
-        question TEXT,
-        cards_json TEXT,
-        interpretation TEXT,
-        created_at TEXT,
-        updated_at TEXT
-        (часть полей может быть NULL).
-
-        Здесь мы не навязываем жёсткую схему: берём ключи data как список колонок.
+        Ожидается таблица с хотя бы этими полями:
+        - id INTEGER PRIMARY KEY
+        - user_id INTEGER NOT NULL
+        - spread_type TEXT NOT NULL
+        - category TEXT NULL
+        - question TEXT NULL
+        - cards_json TEXT NULL
+        - interpretation TEXT NULL
+        - created_at TEXT NULL
+        - updated_at TEXT NULL
         """
         with self._get_conn() as conn:
             cur = conn.cursor()
             spread_id = data.get("id")
 
             if spread_id is None:
-                # INSERT
                 cols = list(data.keys())
-                placeholders = ", ".join([f":{c}" for c in cols])
                 cols_sql = ", ".join(cols)
+                placeholders = ", ".join([f":{c}" for c in cols])
                 sql = f"INSERT INTO spreads ({cols_sql}) VALUES ({placeholders})"
                 cur.execute(sql, data)
                 spread_id = int(cur.lastrowid)
             else:
-                # UPDATE по id
                 cols = [k for k in data.keys() if k != "id"]
                 set_sql = ", ".join([f"{c} = :{c}" for c in cols])
                 sql = f"UPDATE spreads SET {set_sql} WHERE id = :id"
@@ -219,11 +192,14 @@ class SQLiteSpreadRepository(SpreadRepository):
 
     def get_spread(self, spread_id: int) -> dict[str, Any] | None:
         """
-        SELECT * FROM spreads WHERE id = ? LIMIT 1
+        Получаем расклад по id (без фильтра по user_id — это на стороне сервиса).
         """
         with self._get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT * FROM spreads WHERE id = ? LIMIT 1", (spread_id,))
+            cur.execute(
+                "SELECT * FROM spreads WHERE id = ? LIMIT 1",
+                (spread_id,),
+            )
             row = cur.fetchone()
             if row is None:
                 return None
@@ -236,18 +212,13 @@ class SQLiteSpreadRepository(SpreadRepository):
         limit: int,
     ) -> tuple[int, list[dict[str, Any]]]:
         """
-        ВАЖНО: фильтрация по user_id.
+        ТЗ 9.1 — история раскладов только для конкретного пользователя.
 
-        Было (плохо):
-            SELECT * FROM spreads ORDER BY created_at DESC
+        Никаких SELECT * FROM spreads ORDER BY ... без WHERE user_id = ?.
 
-        Стало:
-            SELECT * FROM spreads
-            WHERE user_id = ?
-            ORDER BY created_at DESC, id DESC
-            LIMIT ? OFFSET ?
-
-        Для total считаем только строки этого пользователя.
+        Здесь ДВА запроса:
+        - COUNT(*) по user_id
+        - SELECT * по user_id с ORDER BY и LIMIT/OFFSET
         """
         if offset < 0:
             offset = 0
@@ -257,7 +228,7 @@ class SQLiteSpreadRepository(SpreadRepository):
         with self._get_conn() as conn:
             cur = conn.cursor()
 
-            # total
+            # total только по этому user_id
             cur.execute(
                 "SELECT COUNT(*) AS cnt FROM spreads WHERE user_id = ?",
                 (user_id,),
@@ -265,7 +236,7 @@ class SQLiteSpreadRepository(SpreadRepository):
             row = cur.fetchone()
             total = int(row["cnt"] if row and "cnt" in row.keys() else 0)
 
-            # items
+            # сами элементы
             cur.execute(
                 """
                 SELECT *
@@ -283,17 +254,15 @@ class SQLiteSpreadRepository(SpreadRepository):
 
     def save_question(self, data: dict[str, Any]) -> int:
         """
-        Примитивный upsert в таблицу вопросов.
+        Upsert в таблицу spread_questions.
 
         Ожидается таблица, например:
-        spread_questions (
-            id INTEGER PRIMARY KEY,
-            spread_id INTEGER NOT NULL,
-            question TEXT NOT NULL,
-            answer TEXT,
-            created_at TEXT,
-            updated_at TEXT
-        )
+        - id INTEGER PRIMARY KEY
+        - spread_id INTEGER NOT NULL
+        - question TEXT NOT NULL
+        - answer TEXT NULL
+        - created_at TEXT NULL
+        - updated_at TEXT NULL
         """
         with self._get_conn() as conn:
             cur = conn.cursor()
@@ -301,8 +270,8 @@ class SQLiteSpreadRepository(SpreadRepository):
 
             if question_id is None:
                 cols = list(data.keys())
-                placeholders = ", ".join([f":{c}" for c in cols])
                 cols_sql = ", ".join(cols)
+                placeholders = ", ".join([f":{c}" for c in cols])
                 sql = (
                     f"INSERT INTO spread_questions ({cols_sql}) "
                     f"VALUES ({placeholders})"
@@ -312,6 +281,7 @@ class SQLiteSpreadRepository(SpreadRepository):
             else:
                 cols = [k for k in data.keys() if k != "id"]
                 set_sql = ", ".join([f"{c} = :{c}" for c in cols])
+                sql = "UPDATE spread_questions SET {set_sql} WHERE id = :id"
                 sql = f"UPDATE spread_questions SET {set_sql} WHERE id = :id"
                 cur.execute(sql, data)
 
@@ -319,10 +289,14 @@ class SQLiteSpreadRepository(SpreadRepository):
 
     def list_questions(self, spread_id: int) -> list[dict[str, Any]]:
         """
-        SELECT * FROM spread_questions WHERE spread_id = ? ORDER BY created_at, id.
+        ТЗ 9.2 — вопросы только по конкретному раскладу.
 
-        Т.е. возвращаем только вопросы конкретного расклада. Проверка "чужой"
-        расклад/вопрос делается в сервисе (по user_id в самом раскладе).
+        SELECT *
+        FROM spread_questions
+        WHERE spread_id = ?
+        ORDER BY created_at ASC, id ASC
+
+        Проверка принадлежности расклада пользователю — в сервисе.
         """
         with self._get_conn() as conn:
             cur = conn.cursor()

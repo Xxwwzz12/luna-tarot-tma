@@ -35,11 +35,6 @@ export default function TarotCarousel({
   const cards = selectedCards || [];
   const effectiveMax = maxCards || cards.length || 1;
 
-  // --- picker state (рулетка) ---
-  const [isSpinning, setIsSpinning] = useState(true);
-  const [isLocked, setIsLocked] = useState(false);
-  const [isFlipped, setIsFlipped] = useState(false);
-
   // ===================== VIEWER-МОД =====================
   if (mode === "viewer") {
     if (!cards.length) {
@@ -50,7 +45,7 @@ export default function TarotCarousel({
       );
     }
 
-    // 1 карта → одна большая
+    // Одна карта — карта дня
     if (effectiveMax === 1 || cards.length === 1) {
       const card = cards[0];
       const position = card.positionLabel || "Карта дня";
@@ -62,7 +57,7 @@ export default function TarotCarousel({
       );
     }
 
-    // 3 карты → статичная сетка
+    // Три (и более) карты — статичная горизонтальная сетка
     return (
       <div className="tarot-carousel tarot-carousel-multi">
         <div className="tarot-carousel-cards-grid">
@@ -82,42 +77,34 @@ export default function TarotCarousel({
     );
   }
 
-  // ===================== PICKER-МОД (ЖИВАЯ РУЛЕТКА) =====================
+  // ===================== PICKER-МОД (интерактивный барабан) =====================
 
+  // selectedCards здесь не используем — это чистый ритуал
   const total = maxCards || 1;
   const count = pickedCount || 0;
   const isDone = count >= total;
 
-  // все карты уже пойманы — не показываем ритуал
+  // все карты пойманы — рулетку не показываем
   if (isDone) {
     return null;
   }
 
+  const [isLocked, setIsLocked] = useState(false);
+  const [isFlipped, setIsFlipped] = useState(false);
+
   const mainCardClassName =
-    "tarot-card main" +
-    (isSpinning ? " spinning" : "") +
-    (isFlipped ? " flipping" : "");
+    "tarot-card main" + (isFlipped ? " flipping" : "");
 
   function handlePick() {
-    if (isLocked) return;
-    if (!onPick) return;
+    if (isLocked || !onPick) return;
 
-    // останавливаем вращение, запускаем flip
     setIsLocked(true);
-    setIsSpinning(false);
     setIsFlipped(true);
 
     setTimeout(() => {
-      onPick(); // сообщаем наверх: ещё одна карта поймана
-
+      onPick();              // родитель увеличит pickedCount
       setIsFlipped(false);
-
-      // если это не последняя карта — снова запускаем вращение
-      if ((pickedCount || 0) + 1 < (maxCards || 1)) {
-        setIsSpinning(true);
-        setIsLocked(false);
-      }
-      // если последняя — при следующем рендере isDone === true, и рулетка исчезнет
+      setIsLocked(false);    // picker исчезнет по isDone на следующем рендере
     }, 500);
   }
 
@@ -131,32 +118,19 @@ export default function TarotCarousel({
         </p>
       </div>
 
-      {/* Визуальное колесо из рубашек.
-          Настоящее "вращение" можно задать в CSS:
-          .tarot-carousel-wheel.spinning { animation: wheel-spin ... } */}
-      <div
-        className={
-          "tarot-carousel-wheel" + (isSpinning ? " spinning" : "")
-        }
-      >
-        {Array.from({ length: 7 }).map((_, i) => (
-          <div key={i} className="tarot-card wheel-card">
+      {/* Бесконечная на вид лента рубашек.
+          Вся динамика — через скролл/свайп пользователя + CSS (overflow-x, snap и т.п.). */}
+      <div className="tarot-carousel-wheel">
+        {Array.from({ length: 40 }).map((_, idx) => (
+          <div key={idx} className="tarot-card wheel-card">
             <div className="tarot-card-back" />
           </div>
         ))}
       </div>
 
-      {/* Центральная карта — аккуратно по центру, с ограничением размеров */}
+      {/* Центральная карта — "зона ловли" */}
       <div className="tarot-card main-wrapper">
-        <div
-          className={mainCardClassName}
-          onClick={handlePick}
-          style={{
-            maxWidth: "220px",
-            aspectRatio: "3 / 5",
-            margin: "0 auto",
-          }}
-        >
+        <div className={mainCardClassName} onClick={handlePick}>
           <div className="tarot-card-back" />
         </div>
       </div>

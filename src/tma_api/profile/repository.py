@@ -11,15 +11,19 @@ logger = logging.getLogger(__name__)
 
 class ProfileRepository:
     """
-    Простой SQLite-репозиторий для профиля пользователя.
+    SQLite-репозиторий для профиля пользователя.
 
-    Задачи:
-    - хранить first_name / last_name / birth_date / gender в таблице профиля;
-    - при GET /profile отдавать те же поля без переименований.
+    Хранит и отдаёт поля:
+    - user_id
+    - username
+    - first_name
+    - last_name
+    - birth_date
+    - gender
+    + служебные created_at / updated_at
     """
 
     def __init__(self, db_path: str = "tma.sqlite3") -> None:
-        # Путь до файла БД можно будет пробросить из настроек/ENV
         self._db_path = Path(db_path)
         self._init_schema()
 
@@ -27,8 +31,8 @@ class ProfileRepository:
 
     def _get_connection(self) -> sqlite3.Connection:
         """
-        Открывает соединение с SQLite и включает row_factory, чтобы
-        можно было удобно превращать строки в dict.
+        Открывает соединение с SQLite и включает row_factory=Row,
+        чтобы удобно превращать строки в dict().
         """
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
@@ -36,10 +40,10 @@ class ProfileRepository:
 
     def _init_schema(self) -> None:
         """
-        Создаёт таблицу tma_profiles, если её ещё нет.
+        Создаёт таблицу tma_profiles при первом запуске.
 
-        Важно: таблица обязательно содержит поля first_name / last_name /
-        birth_date / gender, как требует ТЗ.
+        Важно: таблица содержит все нужные поля профиля:
+        user_id, username, first_name, last_name, birth_date, gender.
         """
         logger.info("Initializing tma_profiles schema in SQLite: %s", self._db_path)
         conn = self._get_connection()
@@ -49,6 +53,7 @@ class ProfileRepository:
                     """
                     CREATE TABLE IF NOT EXISTS tma_profiles (
                         user_id     INTEGER PRIMARY KEY,
+                        username    TEXT NULL,
                         first_name  TEXT NULL,
                         last_name   TEXT NULL,
                         birth_date  TEXT NULL,
@@ -69,6 +74,7 @@ class ProfileRepository:
 
         {
           "user_id": ...,
+          "username": ...,
           "first_name": ...,
           "last_name": ...,
           "birth_date": ...,
@@ -86,6 +92,7 @@ class ProfileRepository:
                 """
                 SELECT
                     user_id,
+                    username,
                     first_name,
                     last_name,
                     birth_date,
@@ -105,25 +112,39 @@ class ProfileRepository:
         finally:
             conn.close()
 
-    def upsert_profile(self, user_id: int, data: Dict[str, Any]) -> None:
+    def upsert_profile(self, user_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Сохранить профиль пользователя.
+        Upsert всех полей профиля в SQLite.
 
-        По ТЗ upsert_profile обязан писать в поля:
-        first_name / last_name / birth_date / gender.
+        Формирует payload:
 
         payload = {
             "user_id": user_id,
+            "username": data.get("username"),
             "first_name": data.get("first_name"),
             "last_name": data.get("last_name"),
             "birth_date": data.get("birth_date"),
             "gender": data.get("gender"),
         }
 
-        Остальные поля (created_at / updated_at) заполняются здесь же.
+        SQL в стиле:
+
+        INSERT INTO tma_profiles (user_id, username, first_name, last_name, birth_date, gender)
+        VALUES (:user_id, :username, :first_name, :last_name, :birth_date, :gender)
+        ON CONFLICT(user_id) DO UPDATE SET
+            username   = excluded.username,
+            first_name = excluded.first_name,
+            last_name  = excluded.last_name,
+            birth_date = excluded.birth_date,
+            gender     = excluded.gender;
+
+        + обновляем updated_at, created_at оставляем как есть.
+
+        Возвращает свежую строку профиля как dict.
         """
         payload = {
             "user_id": user_id,
+            "username": data.get("username"),
             "first_name": data.get("first_name"),
             "last_name": data.get("last_name"),
             "birth_date": data.get("birth_date"),
@@ -135,11 +156,11 @@ class ProfileRepository:
         conn = self._get_connection()
         try:
             with conn:
-                # INSERT ... ON CONFLICT(user_id) DO UPDATE — классический upsert
                 conn.execute(
                     """
                     INSERT INTO tma_profiles (
                         user_id,
+                        username,
                         first_name,
                         last_name,
                         birth_date,
@@ -149,6 +170,7 @@ class ProfileRepository:
                     )
                     VALUES (
                         :user_id,
+                        :username,
                         :first_name,
                         :last_name,
                         :birth_date,
@@ -157,6 +179,7 @@ class ProfileRepository:
                         :updated_at
                     )
                     ON CONFLICT(user_id) DO UPDATE SET
+                        username   = excluded.username,
                         first_name = excluded.first_name,
                         last_name  = excluded.last_name,
                         birth_date = excluded.birth_date,
@@ -172,4 +195,11 @@ class ProfileRepository:
         finally:
             conn.close()
 
-        logger.debug("Profile upserted for user_id=%s: %r", user_id, payload)
+        # Возвращаем свежую версию профиля для ProfileService
+        profile = self.get_profile(user_id)
+        if profile is None:
+            # Теоретически не должно случиться, но на всякий случай
+            raise RuntimeError(f"Failed to read profile after upsert (user_id={user_id})")
+
+        logger.debug("Profile upserted for user_id=%s: %r", user_id, profile)
+        return profile

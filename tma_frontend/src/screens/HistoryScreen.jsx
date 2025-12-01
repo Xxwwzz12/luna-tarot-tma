@@ -36,6 +36,9 @@ export default function HistoryScreen({
 }) {
   const [localQuestion, setLocalQuestion] = useState("");
 
+  // безопасная работа с questions
+  const safeQuestions = Array.isArray(questions) ? questions : [];
+
   // spreads может быть объектом или массивом
   const items = Array.isArray(spreads)
     ? spreads
@@ -172,32 +175,32 @@ export default function HistoryScreen({
             </button>
           </div>
 
-          {/* СПИСОК Q&A ПО РАСКЛАДУ */}
+          {/* БЛОК ВОПРОСОВ/ОТВЕТОВ — ТОЛЬКО В DETAIL-РЕЖИМЕ */}
           <section className="history-detail-questions">
             <h3 className="section-subtitle">Вы задали вопросы</h3>
 
-            {questions.length === 0 && (
+            {safeQuestions.length === 0 ? (
               <p className="muted">
                 Вы пока не задавали дополнительных вопросов.
               </p>
-            )}
-
-            {questions.length > 0 && (
+            ) : (
               <ul className="qa-list">
-                {questions.map((q) => {
+                {safeQuestions.map((q) => {
                   const rawAnswer = q.answer;
-                  const hasAnswer = rawAnswer != null && String(rawAnswer).trim() !== "";
+                  const hasAnswer =
+                    rawAnswer != null &&
+                    String(rawAnswer).trim() !== "";
                   const answerText = hasAnswer
                     ? String(rawAnswer).trim()
                     : "Ответ ещё формируется";
 
                   return (
                     <li key={q.id} className="qa-item">
-                      <div>
-                        <b>Вопрос:</b> {q.question}
+                      <div className="qa-question">
+                        Вопрос: {q.question}
                       </div>
-                      <div>
-                        <b>Ответ:</b> {answerText}
+                      <div className="qa-answer">
+                        Ответ: {answerText}
                       </div>
                     </li>
                   );

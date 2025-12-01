@@ -80,7 +80,7 @@ function App() {
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState(false);
 
-  // 🆕 Храним вопросы по каждому раскладу: { [spreadId]: Question[] }
+  // Храним вопросы по каждому раскладу: { [spreadId]: Question[] }
   const [questionsBySpread, setQuestionsBySpread] = useState({});
 
   // Лог initData один раз (диагностика)
@@ -309,7 +309,7 @@ function App() {
 
     if (res?.ok && res.data) {
       console.log("[TMA] New profile from API:", res.data);
-      setProfile(res.data); // <-- после POST используем именно обновлённый профиль с бэка
+      setProfile(res.data); // используем именно обновлённый профиль с бэка
     }
   }
 
@@ -368,27 +368,25 @@ function App() {
       );
 
       if (res?.ok && res.data) {
+        const created = res.data; // одиночный вопрос
+
         // Обновляем компактное состояние Q&A (для SpreadsScreen, если нужно)
         setQaState({
           question: questionText,
           isAsking: false,
-          answer: res.data,
+          answer: created,
         });
 
-        // Обновляем список вопросов по этому раскладу
-        setQuestionsBySpread((prev) => {
-          const prevList = prev[effectiveSpreadId] || [];
-          const nextList = Array.isArray(res.data)
-            ? res.data
-            : [...prevList, res.data];
+        // Обновляем список вопросов по этому раскладу — добавляем в массив
+        setQuestionsBySpread((prev) => ({
+          ...prev,
+          [effectiveSpreadId]: [
+            ...(prev[effectiveSpreadId] || []),
+            created,
+          ],
+        }));
 
-          return {
-            ...prev,
-            [effectiveSpreadId]: nextList,
-          };
-        });
-
-        console.log("[TMA] Question created for spread:", res.data);
+        console.log("[TMA] Question created for spread:", created);
       } else {
         console.warn("[TMA] Failed to ask question", res);
       }

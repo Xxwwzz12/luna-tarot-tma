@@ -24,7 +24,6 @@ def _to_iso(value: Any) -> str:
 
 class PostgresSpreadRepository(SpreadRepository):
     def __init__(self) -> None:
-        # Пока без пула, на каждую операцию своё подключение.
         logger.info("PostgresSpreadRepository initialized")
         self._init_schema()
 
@@ -129,10 +128,6 @@ class PostgresSpreadRepository(SpreadRepository):
     def get_spread(self, spread_id: int) -> dict[str, Any] | None:
         """
         Возвращает один расклад по id или None, если не найден.
-
-        ВАЖНО: здесь фильтрация только по id.
-        Проверка принадлежности user_id делается в сервисе (SpreadService),
-        как мы обсуждали в ТЗ по интерфейсу.
         """
         sql = """
         SELECT
@@ -186,11 +181,10 @@ class PostgresSpreadRepository(SpreadRepository):
         limit: int,
     ) -> tuple[int, list[dict[str, Any]]]:
         """
-        Возвращает (total, items) для раскладов КОНКРЕТНОГО пользователя.
+        История раскладов КОНКРЕТНОГО пользователя.
 
-        Тут как раз важно, что:
-        SELECT ... FROM tma_spreads
-        ДОЛЖЕН быть с WHERE user_id = :user_id.
+        ТЗ 10.1 — обязательный фильтр WHERE user_id = %(user_id)s
+        и тот же фильтр в COUNT(*).
         """
         count_sql = """
         SELECT COUNT(*) AS total
@@ -322,11 +316,11 @@ class PostgresSpreadRepository(SpreadRepository):
 
     def list_questions(self, spread_id: int) -> list[dict[str, Any]]:
         """
-        Возвращает список уточняющих вопросов по конкретному раскладу.
+        ТЗ 10.2 — вопросы по конкретному раскладу.
 
-        Здесь фильтрация по spread_id. Проверка, что этот spread_id
-        принадлежит user_id, также должна происходить уровнем выше
-        (в сервисе), чтобы не расширять интерфейс репозитория.
+        SELECT ... FROM tma_spread_questions
+        WHERE spread_id = %(spread_id)s
+        ORDER BY created_at ASC, id ASC;
         """
         sql = """
         SELECT

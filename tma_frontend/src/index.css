@@ -162,7 +162,7 @@ body {
   border-color: var(--accent-soft);
 }
 
-/* Категории раскладов (если используются отдельные чипы) */
+/* Категории раскладов */
 .spread-category-chip {
   border-radius: 999px;
   border: 1px solid var(--border-subtle);
@@ -460,7 +460,8 @@ button:disabled {
   align-items: center;
   gap: 0.5rem;
   text-align: center;
-  max-width: 160px;
+  flex: 0 0 auto;
+  max-width: 140px;
   overflow: hidden;
 }
 
@@ -480,24 +481,18 @@ button:disabled {
   height: auto;
 }
 
-/* Обёртка под центральную карту / картинки в гриде */
+/* Обёртка под картинку в карусели / гриде */
 .tarot-card-image-wrapper {
-  aspect-ratio: 3 / 5;
   width: 100%;
-  max-width: min(55vw, 220px);
-  max-height: min(75vh, 340px);
+  aspect-ratio: 3 / 5;
   margin: 0 auto;
-  display: flex;
-  justify-content: center;
-  align-items: center;
 }
 
 /* Изображение карты */
 .tarot-card-image {
-  display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   border-radius: 12px;
   backface-visibility: hidden;
 }
@@ -512,20 +507,20 @@ button:disabled {
 .tarot-card.main-wrapper {
   display: flex;
   justify-content: center;
-  align-items: center;
-  margin: 8px 0;
+  margin: 12px 0;
 }
 
-/* Основная карта в карусели / рулетке */
+/* Основная карта в карусели / рулетке — адаптив, без absolute */
 .tarot-card.main {
   position: relative;
-  z-index: 1; /* не перекрывать заголовок */
+  width: min(55vw, 220px);
+  height: min(75vw, 340px);
+  max-width: 220px;
+  max-height: 340px;
+  z-index: 1;
   cursor: grab;
   touch-action: pan-y;
   backface-visibility: hidden;
-  width: min(55vw, 220px);
-  height: min(75vw, 340px);
-  max-width: 100%;
 }
 
 /* Во время перетаскивания */
@@ -545,7 +540,7 @@ button:disabled {
   opacity: 0.9;
 }
 
-/* Рубашка — PNG (MUST BE PNG) */
+/* Рубашка — PNG (адаптив) */
 .tarot-card-back {
   width: 100%;
   height: 100%;
@@ -556,7 +551,7 @@ button:disabled {
   backface-visibility: hidden;
 }
 
-/* Анимация спина "рулетки" (больше как качающееся колесо) */
+/* Анимация спина "рулетки" (покачивание) */
 @keyframes tarot-spin {
   0% {
     transform: rotate(0deg) scale(1);
@@ -600,48 +595,46 @@ button:disabled {
   flex: 1;
 }
 
-/* Визуал "колёсика" рулетки — пояс из рубашек */
+/* Колесо рулетки — горизонтальный барабан */
 .tarot-carousel-wheel {
   display: flex;
-  justify-content: center;
-  gap: 6px;
-  margin: 8px 0 14px;
-  overflow: hidden;
-  position: relative;
+  overflow-x: auto;
+  padding: 8px 0;
+  gap: 8px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Плиточки в поясе */
-.wheel-card {
-  width: 40px;
-  height: 70px;
-  opacity: 0.6;
+.tarot-carousel-wheel::-webkit-scrollbar {
+  display: none;
+}
+
+.tarot-carousel-wheel .wheel-card {
+  flex: 0 0 auto;
+  width: 60px;
+  height: 96px;
+  scroll-snap-align: center;
   border-radius: 10px;
   background-image: url("/images/tarot/back.png");
   background-size: cover;
   background-position: center;
-  flex-shrink: 0;
+  opacity: 0.7;
 }
 
-/* Когда колесо "крутится" — анимируем пояс (ожидается класс .spinning на контейнере) */
-.tarot-carousel-wheel.spinning .wheel-card {
-  animation: tarot-wheel 0.7s linear infinite;
-}
-
-@keyframes tarot-wheel {
-  0% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(-52px); /* ширина + gap, имитация движения пояса */
-  }
-}
-
-/* 3 карты в ряд — viewer-режим */
+/* 3 карты в ряд — viewer-режим, горизонтальный скролл */
 .tarot-carousel-cards-grid {
   display: flex;
-  gap: 12px;
+  flex-direction: row;
   justify-content: center;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 8px 0;
+}
+
+.tarot-carousel-cards-grid::-webkit-scrollbar {
+  display: none;
 }
 
 /* =========================================================
@@ -658,7 +651,7 @@ button:disabled {
 }
 
 /* =========================================================
-   ТЕКУЩИЙ РАСКЛАД
+   ТЕКУЩИЙ РАСКЛАД / ИНТЕРПРЕТАЦИЯ
    ========================================================= */
 .spread-current .spread-meta {
   display: flex;
@@ -679,10 +672,21 @@ button:disabled {
   font-size: 0.85rem;
 }
 
+/* Контейнер интерпретации: ограниченная высота + скролл */
 .spread-interpretation {
   margin-top: 10px;
   font-size: 0.9rem;
   line-height: 1.4;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Сам текст интерпретации, без обрезки */
+.spread-interpretation-text {
+  white-space: pre-wrap;
+  line-height: 1.5;
+  max-height: none;
+  overflow: visible;
 }
 
 .spread-current-empty {

@@ -121,9 +121,7 @@ export default function SpreadsScreen({
     if (spreadType === "three") {
       if (useCustomQuestion) {
         if (!customQuestion.trim()) {
-          setError(
-            "Пожалуйста, сформулируйте ваш вопрос или выключите опцию «Свой вопрос»."
-          );
+          setError("Пожалуйста, сформулируйте ваш вопрос.");
           return;
         }
       } else {
@@ -134,7 +132,6 @@ export default function SpreadsScreen({
       }
     }
 
-    // Проверка ритуала выбора карт
     if (pickedCount < maxCards) {
       setError("Сначала выберите все карты, а потом сделайте расклад.");
       return;
@@ -170,7 +167,7 @@ export default function SpreadsScreen({
   const renderPositionSummary = (cards) => {
     if (!cards || !cards.length) return null;
 
-    if (cards.length === 1 || spreadType === "one" || currentSpread?.spread_type === "one") {
+    if (cards.length === 1 || currentSpread?.spread_type === "one") {
       const card = cards[0];
       const name = card?.name || card?.title || "Карта дня";
       const isReversed = card?.is_reversed || card?.reversed;
@@ -327,17 +324,15 @@ export default function SpreadsScreen({
         <div className="card spread-picker">
           <h3 className="section-subtitle">Ритуал выбора карт</h3>
 
-          {pickedCount < maxCards && (
-            <TarotCarousel
-              mode="picker"
-              pickedCount={pickedCount}
-              maxCards={maxCards}
-              onPick={() => {
-                setPickedCount((prev) => Math.min(prev + 1, maxCards));
-                setError(null);
-              }}
-            />
-          )}
+          <TarotCarousel
+            mode="picker"
+            pickedCount={pickedCount}
+            maxCards={maxCards}
+            onPick={() => {
+              setPickedCount((prev) => Math.min(prev + 1, maxCards));
+              setError(null);
+            }}
+          />
 
           <p className="muted">
             {maxCards === 1
