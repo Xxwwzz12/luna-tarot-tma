@@ -14,37 +14,20 @@ logger = logging.getLogger(__name__)
 
 class ProfileService:
     """
-    Сервис профиля для TMA API.
+    Профиль-сервис TMA API.
 
-    Публичный интерфейс:
-      - get_or_create_profile(user_id: int, ...) -> ProfileModel
-      - update_profile(user_id: int, data: Any) -> ProfileModel
-
-    Источник хранения:
-      - PostgresProfileRepository при TMA_DB_BACKEND=postgres и наличии DATABASE_URL
-      - UserDatabase во всех остальных случаях.
+    Главный принцип:
+    - БД — источник истины.
+    - Telegram/dev-профиль используется только как fallback для пустых полей.
     """
 
     def __init__(self, repo: Any | None = None) -> None:
-        """
-        Инициализация репозитория профиля.
-
-        repo:
-          - если передан явно — используем как есть (например, в тестах);
-          - иначе:
-              * при TMA_DB_BACKEND=postgres и наличии DATABASE_URL —
-                PostgresProfileRepository;
-              * иначе — UserDatabase (текущая SQLite/файловая реализация).
-        """
         backend = os.getenv("TMA_DB_BACKEND", "").strip().lower()
         db_url = os.getenv("DATABASE_URL", "").strip()
 
         if repo is not None:
             self._repo = repo
-            logger.info(
-                "ProfileService: using injected repository %s",
-                type(repo).__name__,
-            )
+            logger.info("ProfileService: using injected repository %s", type(repo).__name__)
             return
 
         if backend == "postgres" and db_url:
@@ -53,64 +36,69 @@ class ProfileService:
                 logger.info("ProfileService: using PostgresProfileRepository")
                 return
             except Exception:
-                logger.exception(
-                    "Failed to init PostgresProfileRepository, falling back to UserDatabase"
-                )
+                logger.exception("Failed to init PostgresProfileRepository, falling back to UserDatabase")
 
-        # default / fallback путь — старая реализация через UserDatabase
+        # fallback / default
         self._repo = UserDatabase()
         logger.info("ProfileService: using UserDatabase (default/fallback)")
 
-    # --------------------------------------------------------------------- #
-    # Внутренние хелперы
-    # --------------------------------------------------------------------- #
+    # ------------------------------------------------------------------ #
+    # internal
+    # ------------------------------------------------------------------ #
 
     def _get_telegram_or_dev_profile(self, defaults: dict[str, Any]) -> dict[str, Any]:
         """
-        Условный "Telegram / dev профиль".
-
-        По сути — то, что мы можем извлечь из initData или dev-хедеров
-        и уже пробросили в get_or_create_profile через **defaults.
+        Формируем "сырой Telegram/dev профиль":
+        username, first_name, last_name, birth_date, gender
+        (birth_date, gender — редко приходят, но оставляем на будущее).
         """
         return {
             "username": defaults.get("username"),
             "first_name": defaults.get("first_name"),
             "last_name": defaults.get("last_name"),
+            "birth_date": defaults.get("birth_date"),
+            "gender": defaults.get("gender"),
         }
 
-    # --------------------------------------------------------------------- #
-    # Публичный интерфейс
-    # --------------------------------------------------------------------- #
+    # ------------------------------------------------------------------ #
+    # public
+    # ------------------------------------------------------------------ #
 
     def get_or_create_profile(self, user_id: int, **defaults: Any) -> ProfileModel:
         """
-        Получить профиль пользователя или создать его, аккуратно объединив:
+        Логика по ТЗ:
 
-          - данные из БД (db_profile)
-          - "сырой" Telegram/dev профиль (tg_profile из initData/headers)
+        1) Читаем БД:
+             db_profile = {...} или {}
 
-        Правило объединения:
+        2) Получаем Telegram/dev-профиль:
+             tg = {...}
 
-          first_name = db.first_name or tg.first_name
-          last_name  = db.last_name  or tg.last_name
-          username   = db.username   or tg.username
-          birth_date = db.birth_date           # только из БД
-          gender     = db.gender               # только из БД
+        3) Схема сборки итоговых значений:
+             username   = db.username   or tg.username
+             first_name = db.first_name or tg.first_name
+             last_name  = db.last_name  or tg.last_name
+             birth_date = db.birth_date or tg.birth_date
+             gender     = db.gender     or tg.gender
+
+        4) Если db_profile пустой — создаём новую запись в БД,
+           используя tg-данные, чтобы затем БД стала источником истины.
+
+        5) Всегда возвращаем ProfileModel.
         """
-        # 1) Берём, что есть в БД (или пустой dict) и "телеграм-профиль"
         db_profile: dict[str, Any] = self._repo.get_profile(user_id) or {}
-        tg_profile: dict[str, Any] = self._get_telegram_or_dev_profile(defaults)
+        tg = self._get_telegram_or_dev_profile(defaults)
 
-        # 2) Собираем итоговые значения с приоритетом БД
-        username = db_profile.get("username") or tg_profile.get("username")
-        first_name = db_profile.get("first_name") or tg_profile.get("first_name")
-        last_name = db_profile.get("last_name") or tg_profile.get("last_name")
-        birth_date = db_profile.get("birth_date")
-        gender = db_profile.get("gender")
+        # Итоговые значения (БД имеет приоритет)
+        username = db_profile.get("username") or tg.get("username")
+        first_name = db_profile.get("first_name") or tg.get("first_name")
+        last_name = db_profile.get("last_name") or tg.get("last_name")
+        birth_date = db_profile.get("birth_date") or tg.get("birth_date")
+        gender = db_profile.get("gender") or tg.get("gender")
 
-        # 3а) Если в БД ещё нет записи — создаём новую, сразу скомбинировав данные
+        # Если профиля в БД ещё нет — создаём его, используя tg-данные
         if not db_profile:
-            new_data: dict[str, Any] = {
+            payload = {
                 "user_id": user_id,
                 "username": username,
                 "first_name": first_name,
@@ -118,60 +106,46 @@ class ProfileService:
                 "birth_date": birth_date,
                 "gender": gender,
             }
-            raw = self._repo.upsert_profile(user_id, new_data)
+            raw = self._repo.upsert_profile(user_id, payload)
             return ProfileModel(**raw)
 
-        # 3б) Если запись есть — по желанию можем "дополнить" её тем,
-        # что приехало из Telegram/dev (но НЕ трогаем birth_date/gender).
-        updated = dict(db_profile)
-        changed = False
+        # Если есть — просто возвращаем объединённые данные (но БД доминирует)
+        combined = {
+            "user_id": user_id,
+            "username": username,
+            "first_name": first_name,
+            "last_name": last_name,
+            "birth_date": birth_date,
+            "gender": gender,
+            "created_at": db_profile.get("created_at"),
+            "updated_at": db_profile.get("updated_at"),
+        }
 
-        for field, value in (
-            ("username", username),
-            ("first_name", first_name),
-            ("last_name", last_name),
-        ):
-            if value is not None and updated.get(field) != value:
-                updated[field] = value
-                changed = True
+        return ProfileModel(**combined)
 
-        if changed:
-            raw = self._repo.upsert_profile(user_id, updated)
-        else:
-            raw = db_profile
-
-        return ProfileModel(**raw)
+    # ------------------------------------------------------------------ #
 
     def update_profile(self, user_id: int, data: Any) -> ProfileModel:
         """
-        Обновить профиль пользователя и вернуть ПОЛНЫЙ ProfileModel.
-
+        Обновление профиля с возвращением ПОЛНОГО результата.
         Логика по ТЗ:
 
-          1) нормализуем data в dict,
-          2) добавляем user_id,
-          3) сохраняем в репозиторий через upsert_profile,
-          4) обязательно делаем return self.get_or_create_profile(user_id),
-             чтобы на выходе были все производные поля (age, zodiac и т.п.)
-             + актуальное слияние с Telegram/dev-профилем при необходимости.
+        1) нормализуем data в dict;
+        2) добавляем user_id;
+        3) сохраняем в БД через upsert_profile;
+        4) return self.get_or_create_profile(user_id) — чтобы вернуть
+           поля age, zodiac и 100% актуальный профиль.
         """
-        # 1) нормализуем payload → dict
         if hasattr(data, "dict"):
             payload: dict[str, Any] = data.dict(exclude_unset=True)
         elif isinstance(data, dict):
             payload = dict(data)
         else:
-            raise TypeError(
-                "update_profile data must be a dict or have a .dict() method"
-            )
+            raise TypeError("update_profile data must be a dict or Pydantic model")
 
-        # user_id всегда берём из аргумента, не даём перезаписать его из payload
         payload["user_id"] = user_id
 
-        # 2) сохраняем изменения
         self._repo.upsert_profile(user_id, payload)
 
-        # 3–4) перечитываем профиль тем же путём, что и для GET /profile
-        # (через get_or_create_profile, где уже есть логика объединения
-        #  с Telegram/dev-профилем и расчёт производных полей).
+        # ОБЯЗАТЕЛЬНО: возвращаем собранный профиль (БД + tg fallback)
         return self.get_or_create_profile(user_id)

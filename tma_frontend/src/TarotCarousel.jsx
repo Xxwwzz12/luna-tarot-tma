@@ -1,11 +1,8 @@
-// tma_frontend/src/TarotCarousel.jsx
-import React, { useState, useEffect, useRef } from "react";
-import TarotCardView from "./components/TarotCardView.jsx";
+// tma_frontend/src/components/TarotCarousel.jsx
+import React, { useState, useEffect } from "react";
+import TarotCardView from "./TarotCardView.jsx";
 
-const DEFAULT_MAX_CARDS = 3;
-const PICKER_DECK_SIZE = 12;
-const SPIN_INTERVAL_MS = 120;
-const PICKER_STOP_DELAY_MS = 700;
+const LABELS_3 = ["Прошлое", "Настоящее", "Будущее"];
 
 /**
  * @typedef {Object} Card
@@ -21,52 +18,40 @@ const PICKER_STOP_DELAY_MS = 700;
 /**
  * Универсальная карусель:
  *
- * mode="picker":
- *   - selectedCards = уже выбранные карты (фронтовый стейт pickedCards)
- *   - maxCards = 1 | 3
- *   - onSelectCard(card, index) вызывается при выборе НОВОЙ карты
- *
  * mode="viewer":
- *   - selectedCards = currentSpread.cards
- *   - maxCards = 1 | 3
- *   - показывает результат расклада (1 или 3 карты)
+ *  - selectedCards = currentSpread.cards
+ *  - maxCards = 1 | 3
+ *
+ * mode="picker":
+ *  - selectedCards = уже выбранные карты (pickedCards)
+ *  - maxCards = 1 | 3
+ *  - onSelectCard вызывается при «остановке» крутилки
  *
  * @param {{
  *  mode?: "viewer" | "picker";
  *  selectedCards?: Card[];
  *  maxCards?: number;
- *  onSelectCard?: (card: Card, index: number) => void;
+ *  onSelectCard?: (card: Card | undefined, index: number) => void;
  * }} props
  */
-export default function TarotCarousel(props) {
-  const {
-    mode = "viewer",
-    selectedCards = [],
-    maxCards = DEFAULT_MAX_CARDS,
-    onSelectCard,
-  } = props;
-
-  // Dev-only: компактный лог
-  if (import.meta.env.DEV) {
-    console.log("[TMA] TarotCarousel props:", {
-      mode,
-      selectedCardsLength: selectedCards?.length,
-      maxCards,
-    });
-  }
-
-  const effectiveMode = mode || "viewer";
+export default function TarotCarousel({
+  mode = "viewer",
+  selectedCards = [],
+  maxCards = 1,
+  onSelectCard,
+}) {
   const cards = selectedCards || [];
+  const effectiveMode = mode || "viewer";
   const effectiveMaxCards =
-    typeof maxCards === "number" ? maxCards : DEFAULT_MAX_CARDS;
+    typeof maxCards === "number" ? maxCards : 1;
 
-  // --- VIEWER: текущий индекс карты ----------------------------------------
-
+  // -------------------- VIEWER MODE --------------------
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  // Держим currentIndex в допустимых пределах при смене количества карт
   useEffect(() => {
     if (effectiveMode !== "viewer") return;
-    if (cards.length === 0) return;
+    if (!cards.length) return;
     setCurrentIndex((prev) => {
       if (prev < 0) return 0;
       if (prev >= cards.length) return cards.length - 1;
@@ -74,122 +59,46 @@ export default function TarotCarousel(props) {
     });
   }, [effectiveMode, cards.length]);
 
-  const LABELS_3 = ["Прошлое", "Настоящее", "Будущее"];
-
-  function handlePrev() {
+  const handlePrev = () => {
     if (effectiveMode !== "viewer") return;
     if (cards.length <= 1) return;
-    setCurrentIndex((prev) => (prev - 1 + cards.length) % cards.length);
-  }
+    setCurrentIndex(
+      (prev) => (prev - 1 + cards.length) % cards.length
+    );
+  };
 
-  function handleNext() {
+  const handleNext = () => {
     if (effectiveMode !== "viewer") return;
     if (cards.length <= 1) return;
-    setCurrentIndex((prev) => (prev + 1) % cards.length);
-  }
+    setCurrentIndex(
+      (prev) => (prev + 1) % cards.length
+    );
+  };
 
-  // --- PICKER: вращающаяся "колода" (рубашки back.png) ---------------------
+  // -------------------- PICKER MODE --------------------
+  const [isSpinning, setIsSpinning] = useState(true);
 
-  const [deck] = useState(() =>
-    Array.from({ length: PICKER_DECK_SIZE }, (_, i) => {
-      /** @type {Card} */
-      return {
-        id: `virtual-${i}`,
-        name: "Скрытая карта",
-        arcana: "virtual",
-        image_url: null,
-      };
-    })
-  );
-
-  const [spinIndex, setSpinIndex] = useState(0);
-  const [isSpinning, setIsSpinning] = useState(false);
-  const [isSlowingDown, setIsSlowingDown] = useState(false);
-
-  const spinTimerRef = useRef(null);
-  const spinIndexRef = useRef(0);
-
-  // В picker-режиме selectedCards = уже выбранные карты (picked)
-  const pickerPickedCount = cards.length;
-
-  useEffect(() => {
-    if (effectiveMode !== "picker") {
-      if (spinTimerRef.current) {
-        clearInterval(spinTimerRef.current);
-        spinTimerRef.current = null;
-      }
-      setIsSpinning(false);
-      setIsSlowingDown(false);
-      return;
-    }
-
-    // Уже выбрали все карты — больше не крутим
-    if (pickerPickedCount >= effectiveMaxCards) {
-      if (spinTimerRef.current) {
-        clearInterval(spinTimerRef.current);
-        spinTimerRef.current = null;
-      }
-      setIsSpinning(false);
-      setIsSlowingDown(false);
-      return;
-    }
-
-    // Уже крутится
-    if (spinTimerRef.current) return;
-
-    setIsSpinning(true);
-    setIsSlowingDown(false);
-
-    const id = setInterval(() => {
-      setSpinIndex((prev) => {
-        const next = (prev + 1) % deck.length;
-        spinIndexRef.current = next;
-        return next;
-      });
-    }, SPIN_INTERVAL_MS);
-
-    spinTimerRef.current = id;
-
-    return () => {
-      if (spinTimerRef.current) {
-        clearInterval(spinTimerRef.current);
-        spinTimerRef.current = null;
-      }
-      setIsSpinning(false);
-      setIsSlowingDown(false);
-    };
-  }, [effectiveMode, pickerPickedCount, effectiveMaxCards, deck.length]);
-
-  function handlePickerCardClick() {
+  const handleStopSpin = () => {
     if (effectiveMode !== "picker") return;
-    if (!isSpinning || isSlowingDown) return;
-    if (pickerPickedCount >= effectiveMaxCards) return;
+    if (!isSpinning) return;
 
-    setIsSlowingDown(true);
+    setIsSpinning(false);
 
-    setTimeout(() => {
-      if (spinTimerRef.current) {
-        clearInterval(spinTimerRef.current);
-        spinTimerRef.current = null;
-      }
-      setIsSpinning(false);
-      setIsSlowingDown(false);
+    // Здесь пока не знаем, какая именно карта «выбрана»,
+    // поэтому отдаём undefined. Внешний код может использовать
+    // сам факт вызова onSelectCard, а не саму карту.
+    if (typeof onSelectCard === "function") {
+      onSelectCard(undefined, 0);
+    }
+  };
 
-      const finalIndex = spinIndexRef.current;
-      const card = deck[finalIndex];
-
-      if (typeof onSelectCard === "function") {
-        onSelectCard(card, finalIndex);
-      }
-    }, PICKER_STOP_DELAY_MS);
-  }
-
-  // --- РЕЖИМ VIEWER ---------------------------------------------------------
-
+  // -------------------- RENDER: VIEWER --------------------
   if (effectiveMode === "viewer") {
-    if (!cards || cards.length === 0) return null;
+    if (!cards.length) {
+      return null;
+    }
 
-    // spread_type === "one" (maxCards === 1) — финальный режим одной карты
+    // Финальный режим для одной карты (Карта дня)
     if (effectiveMaxCards === 1 && cards.length === 1) {
       const card = cards[0];
 
@@ -200,13 +109,16 @@ export default function TarotCarousel(props) {
           </div>
 
           <div className="tarot-carousel-single-card">
-            <TarotCardView card={card} positionLabel="Карта дня" />
+            <TarotCardView
+              card={card}
+              positionLabel={card.positionLabel || "Карта дня"}
+            />
           </div>
         </div>
       );
     }
 
-    // spread_type === "three" (maxCards === 3) — листаем 3 карты
+    // Режим трёх карт (или более) — листаем по currentIndex
     const current = cards[currentIndex];
 
     return (
@@ -226,9 +138,10 @@ export default function TarotCarousel(props) {
               <TarotCardView
                 card={current}
                 positionLabel={
-                  effectiveMaxCards === 3
-                    ? LABELS_3[currentIndex] || null
-                    : null
+                  current.positionLabel ||
+                  (effectiveMaxCards === 3
+                    ? LABELS_3[currentIndex] || "Карта дня"
+                    : "Карта дня")
                 }
               />
             )}
@@ -263,23 +176,21 @@ export default function TarotCarousel(props) {
     );
   }
 
-  // --- РЕЖИМ PICKER ---------------------------------------------------------
+  // -------------------- RENDER: PICKER --------------------
+  // selectedCards здесь = уже выбранные карты (pickedCards),
+  // но сама крутилка показывает только рубашку.
+  const pickedCount = cards.length;
+  const remaining = Math.max(effectiveMaxCards - pickedCount, 0);
 
-  if (pickerPickedCount >= effectiveMaxCards) {
-    // все карты уже выбраны — блок выбора скрываем
+  // Если уже выбрали нужное количество карт — picker можно не показывать
+  if (pickedCount >= effectiveMaxCards) {
     return null;
   }
 
-  const remaining = Math.max(
-    effectiveMaxCards - pickerPickedCount,
-    0
-  );
-
-  const mainCardClasses = [
+  const mainCardClassName = [
     "tarot-card",
     "main",
     isSpinning ? "spinning" : "",
-    isSlowingDown ? "slowing" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -289,10 +200,10 @@ export default function TarotCarousel(props) {
       <div className="tarot-carousel-header">
         <h3 className="tarot-carousel-title">Выбор карт</h3>
         <p className="muted small">
-          Нажмите на карту, чтобы остановить и выбрать её.
+          Нажмите на карту, чтобы остановить вращение и выбрать её.
         </p>
         <p className="muted small">
-          Выбрано: {pickerPickedCount} / {effectiveMaxCards}.{" "}
+          Выбрано: {pickedCount} / {effectiveMaxCards}.{" "}
           {remaining > 0 && `Осталось выбрать: ${remaining}.`}
         </p>
       </div>
@@ -300,10 +211,10 @@ export default function TarotCarousel(props) {
       <div className="tarot-carousel-main">
         <div
           className="tarot-carousel-card-wrapper"
-          onClick={handlePickerCardClick}
+          onClick={handleStopSpin}
         >
           <div className="tarot-stack">
-            {/* Левая "призрачная" рубашка */}
+            {/* Левая «призрачная» рубашка */}
             <div className="tarot-card ghost ghost-left">
               <img
                 src="/images/tarot/back.png"
@@ -312,8 +223,8 @@ export default function TarotCarousel(props) {
               />
             </div>
 
-            {/* Основная карта — крутится/останавливается */}
-            <div className={mainCardClasses}>
+            {/* Основная карта — крутится, пока isSpinning === true */}
+            <div className={mainCardClassName}>
               <img
                 src="/images/tarot/back.png"
                 alt="Рубашка карты"
@@ -321,7 +232,7 @@ export default function TarotCarousel(props) {
               />
             </div>
 
-            {/* Правая "призрачная" рубашка */}
+            {/* Правая «призрачная» рубашка */}
             <div className="tarot-card ghost ghost-right">
               <img
                 src="/images/tarot/back.png"
@@ -331,6 +242,14 @@ export default function TarotCarousel(props) {
             </div>
           </div>
         </div>
+
+        <button
+          type="button"
+          className="btn-primary tarot-picker-stop-btn"
+          onClick={handleStopSpin}
+        >
+          {isSpinning ? "Поймать карту" : "Карта выбрана"}
+        </button>
       </div>
     </div>
   );

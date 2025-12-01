@@ -40,21 +40,27 @@ function App() {
   const [profile, setProfile] = useState(null);
 
   // История раскладов (список)
-  const [spreads, setSpreads] = useState({ items: [] });
+  // Теперь это просто массив элементов списка, а не объект { items, ... }
+  const [spreads, setSpreads] = useState(null);
 
-  // Текущий расклад (detail или элемент из списка)
-  // currentSpread.cards — карты расклада с бэка (viewer-карусель).
+  // Текущий расклад для вкладки "Расклады"
   const [currentSpread, setCurrentSpread] = useState(null);
 
-  // AI-интерпретация расклада
+  // Детальный расклад для вкладки "История"
+  const [historyDetail, setHistoryDetail] = useState(null);
+
+  // AI-интерпретация текущего расклада (Спреды)
   const [isInterpreting, setIsInterpreting] = useState(false);
 
-  // Состояние Q&A для текущего расклада
+  // Состояние Q&A под текущим раскладом (для SpreadsScreen, оставляем)
   const [qaState, setQaState] = useState({
     question: "",
     isAsking: false,
     answer: null,
   });
+
+  // Флаг отправки вопроса (для HistoryScreen)
+  const [isAskingQuestion, setIsAskingQuestion] = useState(false);
 
   // Общие статусы
   const [loading, setLoading] = useState(false);
@@ -66,10 +72,10 @@ function App() {
   const [category, setCategory] = useState("love");
   const [question, setQuestion] = useState("");
 
-  // Выбранные карты в режиме picker (фронтовый ритуал, не уходит на бэк)
+  // Выбранные карты в режиме picker (фронтовый ритуал)
   const [selectedCards, setSelectedCards] = useState([]);
 
-  // История вопросов/ответов (старый Q&A-список, пока оставляем)
+  // Старый список Q&A для текущего расклада (оставляем для совместимости)
   const [questions, setQuestions] = useState([]);
   const [newQuestion, setNewQuestion] = useState("");
   const [questionsLoading, setQuestionsLoading] = useState(false);
@@ -115,7 +121,7 @@ function App() {
     }
   }
 
-  // Загрузка истории раскладов
+  // Загрузка истории раскладов → сохраняем именно список items
   async function fetchSpreadsList(page = 1, limit = 10) {
     console.log(
       "[TMA] API GET /spreads?page=%s&limit=%s",
@@ -125,7 +131,7 @@ function App() {
     const res = await apiGet(`/spreads?page=${page}&limit=${limit}`);
 
     if (res?.ok && res.data && Array.isArray(res.data.items)) {
-      setSpreads(res.data);
+      setSpreads(res.data.items);
       console.log(
         "[TMA] Spreads list loaded:",
         res.data.items.length,
@@ -156,7 +162,7 @@ function App() {
     })();
   }, []);
 
-  // Загрузка списка вопросов для расклада
+  // Загрузка списка вопросов для расклада (старый Q&A, пока оставляем)
   async function loadQuestionsForSpread(spreadId) {
     if (!spreadId) {
       setQuestions([]);
@@ -205,7 +211,7 @@ function App() {
     });
   }
 
-  // Создание расклада (POST /spreads) — payload приходит из SpreadsScreen
+  // Создание расклада (POST /spreads) — для вкладки «Расклады»
   async function handleCreateSpread(payload) {
     try {
       if (!payload) {
@@ -225,12 +231,13 @@ function App() {
         const detail = res.data; // SpreadDetail
         console.log("[TMA] New spread detail:", detail);
 
+        // важно: это только для вкладки "Расклады"
         setCurrentSpread(detail);
         setActiveTab("spreads");
 
-        // Обновляем историю, если она уже загружена
+        // Обновляем список spreads (prepend) если он уже загружен
         setSpreads((prev) => {
-          if (!prev || !Array.isArray(prev.items)) return prev;
+          const prevItems = Array.isArray(prev) ? prev : [];
 
           const newItem = {
             id: detail.id,
@@ -244,11 +251,7 @@ function App() {
             interpretation: detail.interpretation || null,
           };
 
-          return {
-            ...prev,
-            items: [newItem, ...prev.items],
-            total_items: (prev.total_items || prev.items.length) + 1,
-          };
+          return [newItem, ...prevItems];
         });
 
         await loadQuestionsForSpread(detail.id);
@@ -267,6 +270,15 @@ function App() {
       setLoading(false);
       setIsInterpreting(false);
     }
+  }
+
+  // Сброс текущего расклада на вкладке «Расклады»
+  function handleResetCurrentSpread() {
+    setCurrentSpread(null);
+    setQaState({ question: "", isAsking: false, answer: null });
+    setQuestions([]);
+    setNewQuestion("");
+    setQuestionsError(false);
   }
 
   // Обновление профиля
@@ -289,60 +301,63 @@ function App() {
     }
   }
 
-  // Новый обработчик Q&A: handleAskQuestion(spreadId, question)
-  async function handleAskQuestion(spreadId, questionText) {
-    const effectiveSpreadId = spreadId ?? currentSpread?.id;
-    const text = (questionText ?? newQuestion ?? "").trim();
-
-    if (!effectiveSpreadId || !text) return;
-
-    setQuestionsError("");
-    setQuestionsLoading(true);
-
-    setQaState({
-      question: text,
-      isAsking: true,
-      answer: null,
-    });
-
+  // Выбор расклада из истории → отдельный detail для History
+  async function handleSelectSpreadFromHistory(id) {
+    if (!id) return;
     try {
-      const res = await apiPost(`/spreads/${effectiveSpreadId}/questions`, {
-        question: text,
-      });
+      console.log("[TMA] API GET /spreads/%s", id);
+      const res = await apiGet(`/spreads/${id}`);
 
       if (res?.ok && res.data) {
+        setHistoryDetail(res.data);
+        // по желанию можно всегда фокусировать вкладку "История":
+        // setActiveTab("history");
+      } else {
+        console.warn("[TMA] Failed to load spread detail", res);
+      }
+    } catch (e) {
+      console.error("[TMA] Error in handleSelectSpreadFromHistory", e);
+    }
+  }
+
+  // Новый глобальный Q&A для истории: задаём вопрос по выбранному раскладу
+  async function handleAskQuestion(spreadId, text) {
+    const effectiveSpreadId = spreadId ?? historyDetail?.id;
+    const questionText = (text ?? "").trim();
+
+    if (!effectiveSpreadId || !questionText) return;
+
+    setIsAskingQuestion(true);
+
+    try {
+      console.log(
+        "[TMA] API POST /spreads/%s/questions",
+        effectiveSpreadId
+      );
+      const res = await apiPost(
+        `/spreads/${effectiveSpreadId}/questions`,
+        { question: questionText }
+      );
+
+      if (res?.ok && res.data) {
+        // Для SpreadsScreen — обновляем qaState, если нужно там показывать
         setQaState({
-          question: text,
+          question: questionText,
           isAsking: false,
           answer: res.data,
         });
 
-        // по желанию, поддерживаем список вопросов
-        setQuestions((prev) => [...prev, res.data]);
-        setNewQuestion("");
+        // Для HistoryScreen — можно обновить historyDetail, если бэк вернёт
+        // обновлённый detail с вопросами; пока просто логируем.
+        console.log("[TMA] Question created for spread:", res.data);
       } else {
         console.warn("[TMA] Failed to ask question", res);
-        setQaState((prev) => ({ ...prev, isAsking: false }));
-        setQuestionsError("Не удалось отправить вопрос. Попробуйте ещё раз.");
       }
     } catch (e) {
-      console.error("Failed to ask question:", e);
-      setQaState((prev) => ({ ...prev, isAsking: false }));
-      setQuestionsError("Не удалось отправить вопрос. Попробуйте ещё раз.");
+      console.error("[TMA] Error in handleAskQuestion", e);
     } finally {
-      setQuestionsLoading(false);
+      setIsAskingQuestion(false);
     }
-  }
-
-  // Выбор расклада из истории
-  function handleHistorySelectSpread(id) {
-    if (!spreads || !Array.isArray(spreads.items)) return;
-
-    const found = spreads.items.find((s) => s.id === id);
-    if (!found) return;
-
-    setCurrentSpread(found);
-    setActiveTab("spreads");
   }
 
   // Рендер активного экрана
@@ -364,7 +379,6 @@ function App() {
             profile={profile}
             loading={loading}
             currentSpread={currentSpread}
-            // флаги состояния AI и Q&A
             isInterpreting={isInterpreting}
             qaState={qaState}
             onAskQuestion={handleAskQuestion}
@@ -378,9 +392,10 @@ function App() {
             // выбор карт (picker)
             selectedCards={selectedCards}
             onSelectCard={handleSelectCard}
-            // создание расклада
+            // создание/сброс расклада
             onCreateSpread={handleCreateSpread}
-            // старый Q&A-список — пока тоже прокидываем
+            onResetCurrentSpread={handleResetCurrentSpread}
+            // старый Q&A-список, если ещё нужен
             questions={questions}
             newQuestion={newQuestion}
             onNewQuestionChange={handleNewQuestionChange}
@@ -392,10 +407,14 @@ function App() {
       case "history":
         return (
           <HistoryScreen
-            spreads={spreads?.items || []}
+            spreads={spreads}
             initialLoading={initialLoading}
             formatDate={formatDate}
-            onSelectSpread={handleHistorySelectSpread}
+            selectedSpread={historyDetail}
+            onSelectSpread={handleSelectSpreadFromHistory}
+            onAskQuestion={handleAskQuestion}
+            isAskingQuestion={isAskingQuestion}
+            onCloseDetail={() => setHistoryDetail(null)}
           />
         );
       case "profile":

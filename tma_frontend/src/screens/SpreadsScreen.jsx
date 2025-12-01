@@ -24,32 +24,27 @@ function getCategoryLabel(code) {
 }
 
 function SpreadsScreen({
-  currentSpread,          // SpreadDetail | null
-  onCreateSpread,         // (payload) => Promise<void> | void
-  isInterpreting,         // boolean
-  qaState,                // { question, isAsking, answer } | undefined
-  onAskQuestion,          // (spreadId, question) => Promise<void> | void
+  profile,
+  currentSpread,        // SpreadDetail | null
+  onCreateSpread,       // (payload) => Promise<void>
+  onResetCurrentSpread, // () => void
 }) {
-  // Внутренние состояния экрана
-  const [spreadType, setSpreadType] = useState("one");          // "one" | "three"
-  const [mode, setMode] = useState("auto");                     // пока не используется, но заложен
-  const [category, setCategory] = useState("daily");            // дефолт для one
-  const [questionMode, setQuestionMode] = useState("category"); // "category" | "custom"
-  const [userQuestion, setUserQuestion] = useState("");
+  // Локальные состояния экрана
+  const [spreadType, setSpreadType] = useState("one");   // "one" | "three"
+  const [category, setCategory] = useState("daily");     // дефолт для one
+  const [question, setQuestion] = useState("");          // свой вопрос только для three
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Визуальный выбор карт (чисто фронтовый UX)
+  // Чисто фронтовый выбор карт (для picker)
   const [pickedCards, setPickedCards] = useState([]);
 
-  const [isQuestionFormOpen, setIsQuestionFormOpen] = useState(false);
-  const [qaInput, setQaInput] = useState("");
+  const hasCurrentSpread = !!currentSpread;
+  const trimmedQuestion = (question || "").trim();
 
-  const trimmedUserQuestion = (userQuestion || "").trim();
-  const hasQa = qaState && (qaState.question || qaState.answer);
+  const maxCards = spreadType === "one" ? 1 : 3;
 
-  // Выбор карты в режиме picker
+  // Обработка выбора карты в режиме picker (простая логика по индексу)
   const handleSelectCard = (cardOrIndex) => {
-    // Минималистично: считаем, что TarotCarousel передаёт индекс
-    // Можно усложнить позже.
     setPickedCards((prev) => {
       const exists = prev.includes(cardOrIndex);
       if (exists) {
@@ -60,61 +55,75 @@ function SpreadsScreen({
   };
 
   // Формирование payload под /spreads
-  const handleSubmit = () => {
-    if (isInterpreting) return;
+  const buildPayload = () => {
+    if (spreadType === "one") {
+      return {
+        mode: "auto",
+        spread_type: "one",
+        category: "daily",
+        question: null,
+      };
+    }
 
+    // three-карточный расклад
     let payloadCategory = null;
     let payloadQuestion = null;
 
-    if (spreadType === "one") {
-      payloadCategory = "daily";
-      payloadQuestion = null;
+    if (trimmedQuestion) {
+      // приоритет: свой вопрос
+      payloadCategory = null;
+      payloadQuestion = trimmedQuestion;
     } else {
-      if (questionMode === "category") {
-        payloadCategory = category || "general";
-        payloadQuestion = null;
-      } else {
-        const q = trimmedUserQuestion || null;
-        payloadCategory = null;
-        payloadQuestion = q;
-      }
+      // fallback на категорию
+      payloadCategory = category || "general";
+      payloadQuestion = null;
     }
 
-    const payload = {
-      mode: mode || "auto",
-      spread_type: spreadType,
+    return {
+      mode: "auto",
+      spread_type: "three",
       category: payloadCategory,
       question: payloadQuestion,
     };
-
-    onCreateSpread && onCreateSpread(payload);
   };
 
-  // дизейбл кнопки «Сделать расклад»
+  // Обработчик «Сделать расклад»
+  const handleSubmit = async () => {
+    if (isSubmitting || !onCreateSpread) return;
+
+    // простая валидация перед отправкой
+    if (spreadType === "three") {
+      if (!category && !trimmedQuestion) {
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+    try {
+      const payload = buildPayload();
+      await onCreateSpread(payload);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleReset = () => {
+    onResetCurrentSpread && onResetCurrentSpread();
+    // Сбрасываем локальный стейт к дефолту
+    setSpreadType("one");
+    setCategory("daily");
+    setQuestion("");
+    setPickedCards([]);
+  };
+
   const isCreateDisabled = (() => {
-    if (isInterpreting) return true;
-
+    if (isSubmitting) return true;
     if (spreadType === "one") {
-      return false; // всегда можно сделать карту дня
+      return false; // карту дня можно генерить всегда
     }
-
-    // "three"
-    if (questionMode === "category") {
-      return !category;
-    }
-
-    // "custom"
-    return !trimmedUserQuestion;
+    // three: нужна либо категория, либо вопрос
+    return !category && !trimmedQuestion;
   })();
-
-  const handleAskQuestionSubmit = () => {
-    if (!currentSpread || isInterpreting || !onAskQuestion) return;
-
-    const q = qaInput.trim();
-    if (!q) return;
-
-    onAskQuestion(currentSpread.id, q);
-  };
 
   const renderCardsSummary = () => {
     const cards = currentSpread?.cards;
@@ -133,18 +142,11 @@ function SpreadsScreen({
     return <p>{text}</p>;
   };
 
-  const maxCards = spreadType === "one" ? 1 : 3;
-  const pickedCount = Array.isArray(pickedCards) ? pickedCards.length : 0;
-
-  const canShowPicker = !currentSpread;
-  const canShowViewer = !!currentSpread;
-
   return (
     <div className="page page-spreads">
-      {/* До интерпретации: выбор расклада */}
-      {!currentSpread && (
+      {/* Режим ДО генерации: нет текущего расклада */}
+      {!hasCurrentSpread && (
         <>
-          {/* Тип расклада */}
           <section className="card card-spread-type">
             <h2>Тип расклада</h2>
 
@@ -154,8 +156,8 @@ function SpreadsScreen({
                 className={
                   spreadType === "one" ? "pill-option active" : "pill-option"
                 }
-                onClick={() => !isInterpreting && setSpreadType("one")}
-                disabled={isInterpreting}
+                onClick={() => !isSubmitting && setSpreadType("one")}
+                disabled={isSubmitting}
               >
                 <span>🃏</span>
                 <span>Карта дня</span>
@@ -166,8 +168,8 @@ function SpreadsScreen({
                 className={
                   spreadType === "three" ? "pill-option active" : "pill-option"
                 }
-                onClick={() => !isInterpreting && setSpreadType("three")}
-                disabled={isInterpreting}
+                onClick={() => !isSubmitting && setSpreadType("three")}
+                disabled={isSubmitting}
               >
                 <span>🔮</span>
                 <span>3 карты (П/Н/Б)</span>
@@ -175,7 +177,6 @@ function SpreadsScreen({
             </div>
           </section>
 
-          {/* Тема / вопрос */}
           <section className="card card-topic">
             <h2>Тема / вопрос</h2>
 
@@ -188,109 +189,75 @@ function SpreadsScreen({
 
             {spreadType === "three" && (
               <>
-                <div className="question-mode-toggle">
-                  <button
-                    type="button"
-                    className={
-                      questionMode === "category"
-                        ? "pill-option active"
-                        : "pill-option"
-                    }
-                    onClick={() =>
-                      !isInterpreting && setQuestionMode("category")
-                    }
-                    disabled={isInterpreting}
-                  >
-                    По категориям
-                  </button>
-                  <button
-                    type="button"
-                    className={
-                      questionMode === "custom"
-                        ? "pill-option active"
-                        : "pill-option"
-                    }
-                    onClick={() =>
-                      !isInterpreting && setQuestionMode("custom")
-                    }
-                    disabled={isInterpreting}
-                  >
-                    Свой вопрос
-                  </button>
+                <p className="muted small">
+                  Выберите категорию или сформулируйте свой вопрос — мы
+                  используем что-то одно.
+                </p>
+
+                <div className="chip-row">
+                  {CATEGORY_OPTIONS.filter(
+                    (opt) => opt.code !== "daily" // daily только для one
+                  ).map((opt) => (
+                    <button
+                      key={opt.code}
+                      type="button"
+                      className={
+                        category === opt.code ? "chip chip-active" : "chip"
+                      }
+                      onClick={() =>
+                        !isSubmitting && setCategory(opt.code)
+                      }
+                      disabled={isSubmitting}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
 
-                {questionMode === "category" && (
-                  <div className="chip-row">
-                    {CATEGORY_OPTIONS.filter(
-                      (opt) => opt.code !== "daily" // daily только для one
-                    ).map((opt) => (
-                      <button
-                        key={opt.code}
-                        type="button"
-                        className={
-                          category === opt.code
-                            ? "chip chip-active"
-                            : "chip"
-                        }
-                        onClick={() =>
-                          !isInterpreting && setCategory(opt.code)
-                        }
-                        disabled={isInterpreting}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {questionMode === "custom" && (
-                  <div className="field">
-                    <label
-                      htmlFor="spread-user-question"
-                      className="field-label"
-                    >
-                      Ваш вопрос
-                    </label>
-                    <textarea
-                      id="spread-user-question"
-                      className="textarea"
-                      rows={3}
-                      value={userQuestion}
-                      onChange={(e) =>
-                        !isInterpreting && setUserQuestion(e.target.value)
-                      }
-                      placeholder="Например: «Что ждёт меня в ближайшие полгода в работе?»"
-                      disabled={isInterpreting}
-                    />
-                  </div>
-                )}
+                <div className="field">
+                  <label
+                    htmlFor="spread-question"
+                    className="field-label"
+                  >
+                    Свой вопрос (опционально)
+                  </label>
+                  <textarea
+                    id="spread-question"
+                    className="textarea"
+                    rows={3}
+                    value={question}
+                    onChange={(e) =>
+                      !isSubmitting && setQuestion(e.target.value)
+                    }
+                    placeholder="Например: «Что ждёт меня в ближайшие полгода в работе?»"
+                    disabled={isSubmitting}
+                  />
+                </div>
               </>
             )}
           </section>
 
-          {/* Выбор карт — режим picker */}
-          {canShowPicker && (
-            <section className="card card-cards">
-              <h2>Выбор карт</h2>
-              <p className="muted">
-                Выберите {maxCards === 1 ? "карту" : "несколько карт"} через
-                колоду (пока это только визуальный ритуал).
-              </p>
+          {/* Карусель-пикер: чисто визуальная магия */}
+          <section className="card card-cards">
+            <h2>Выбор карт</h2>
+            <p className="muted">
+              Выберите {maxCards === 1 ? "карту" : "несколько карт"} через
+              колоду (пока это только визуальный ритуал).
+            </p>
 
-              <TarotCarousel
-                mode="picker"
-                maxCards={maxCards}
-                pickedCards={pickedCards}
-                onSelectCard={handleSelectCard}
-              />
+            <TarotCarousel
+              mode="picker"
+              maxCards={maxCards}
+              pickedCards={pickedCards}
+              onSelectCard={handleSelectCard}
+            />
 
-              <p className="muted">
-                Выбрано: {pickedCount} / {maxCards}
-              </p>
-            </section>
-          )}
+            <p className="muted small">
+              Сейчас карты выбираются автоматически. Позже здесь появится
+              полноценный выбор.
+            </p>
+          </section>
 
-          {/* Кнопка создания расклада */}
           <section className="card card-actions">
             <button
               type="button"
@@ -298,22 +265,17 @@ function SpreadsScreen({
               disabled={isCreateDisabled}
               onClick={handleSubmit}
             >
-              Сделать расклад
+              {isSubmitting ? "Генерируем расклад..." : "Сделать расклад"}
             </button>
-
-            <p className="muted small">
-              Сейчас карты выбираются автоматически. Визуальный выбор через
-              карусель появится позже.
-            </p>
           </section>
         </>
       )}
 
-      {/* После интерпретации: просмотр расклада + Q&A */}
-      {canShowViewer && (
+      {/* Режим ПОСЛЕ генерации: есть currentSpread */}
+      {hasCurrentSpread && (
         <section className="card section spread-current">
           <div className="spread-current-header">
-            <p className="section-title">Текущий расклад</p>
+            <p className="section-title">Ваш расклад</p>
             {currentSpread?.id && (
               <span className="badge-soft">из истории</span>
             )}
@@ -358,82 +320,33 @@ function SpreadsScreen({
             {renderCardsSummary()}
           </div>
 
-          {currentSpread.interpretation && (
-            <div className="spread-interpretation">
-              <p className="section-subtitle">Интерпретация</p>
+          <div className="spread-interpretation">
+            <p className="section-subtitle">Интерпретация</p>
+            {currentSpread.interpretation ? (
               <p className="interpretation-text">
                 {currentSpread.interpretation}
               </p>
-            </div>
-          )}
+            ) : (
+              <p className="muted">
+                Интерпретация пока не готова. Обновите экран чуть позже.
+              </p>
+            )}
+          </div>
 
-          {/* Блок доп. вопросов по раскладу */}
-          <div className="spread-qa">
+          <div className="card card-actions">
             <button
               type="button"
               className="btn-secondary"
-              onClick={() =>
-                !isInterpreting &&
-                setIsQuestionFormOpen((prev) => !prev)
-              }
-              disabled={isInterpreting}
+              onClick={handleReset}
             >
-              Задать вопрос по раскладу
+              Сделать новый расклад
             </button>
-
-            {isQuestionFormOpen && (
-              <div className="card card-qa">
-                <div className="field">
-                  <label htmlFor="qa-question" className="field-label">
-                    Ваш уточняющий вопрос
-                  </label>
-                  <textarea
-                    id="qa-question"
-                    className="textarea"
-                    rows={3}
-                    value={qaInput}
-                    onChange={(e) => setQaInput(e.target.value)}
-                    placeholder="Например: «Что мне важно учесть в ближайший месяц?»"
-                    disabled={isInterpreting || qaState?.isAsking}
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={handleAskQuestionSubmit}
-                  disabled={
-                    isInterpreting ||
-                    qaState?.isAsking ||
-                    !qaInput.trim()
-                  }
-                >
-                  Отправить вопрос
-                </button>
-              </div>
-            )}
-
-            {hasQa && (
-              <div className="qa-answer">
-                {qaState?.question && (
-                  <p className="qa-question">
-                    <span className="muted small">Ваш вопрос:</span>{" "}
-                    {qaState.question}
-                  </p>
-                )}
-                {qaState?.answer && (
-                  <p className="qa-answer-text">
-                    <span className="muted small">Ответ:</span>{" "}
-                    {qaState.answer}
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         </section>
       )}
 
-      {/* Оверлей ожидания интерпретации */}
-      {isInterpreting && (
+      {/* Оверлей ожидания только на время submit */}
+      {isSubmitting && !hasCurrentSpread && (
         <div className="overlay overlay-block">
           <div className="overlay-content">
             <div className="spinner" />
