@@ -9,6 +9,15 @@ function getSpreadTitle(spreadType) {
   return "Расклад";
 }
 
+const THREE_SPREAD_CATEGORIES = [
+  { value: "general", label: "Общее" },
+  { value: "love", label: "Любовь и отношения" },
+  { value: "career", label: "Карьера и работа" },
+  { value: "finance", label: "Деньги и финансы" },
+  { value: "health", label: "Самочувствие" },
+  { value: "self", label: "Самопознание" },
+];
+
 export default function SpreadsScreen({
   currentSpread,
   onCreateSpread,       // (payload) => Promise<void>
@@ -167,26 +176,30 @@ export default function SpreadsScreen({
         <div className="card">
           <div className="field-group">
             <label className="field-label">Тип расклада</label>
-            <div className="button-group">
+
+            <div className="spread-type-toggle">
               <button
                 type="button"
-                className={`btn ${
-                  spreadType === "one" ? "btn-primary" : "btn-outline"
-                }`}
+                className={
+                  "toggle-pill" +
+                  (spreadType === "one" ? " toggle-pill-active" : "")
+                }
                 onClick={() => handleChangeSpreadType("one")}
                 disabled={isSubmitting}
               >
-                1 карта (Карта дня)
+                Карта дня
               </button>
+
               <button
                 type="button"
-                className={`btn ${
-                  spreadType === "three" ? "btn-primary" : "btn-outline"
-                }`}
+                className={
+                  "toggle-pill" +
+                  (spreadType === "three" ? " toggle-pill-active" : "")
+                }
                 onClick={() => handleChangeSpreadType("three")}
                 disabled={isSubmitting}
               >
-                3 карты (П / Н / Б)
+                3 карты
               </button>
             </div>
 
@@ -214,37 +227,19 @@ export default function SpreadsScreen({
                   </span>
                 </label>
                 <div className="button-group">
-                  <button
-                    type="button"
-                    className={`btn ${
-                      category === "general" ? "btn-soft" : "btn-outline"
-                    }`}
-                    onClick={() => handleCategoryChange("general")}
-                    disabled={isSubmitting || useCustomQuestion}
-                  >
-                    Общее
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn ${
-                      category === "love" ? "btn-soft" : "btn-outline"
-                    }`}
-                    onClick={() => handleCategoryChange("love")}
-                    disabled={isSubmitting || useCustomQuestion}
-                  >
-                    Любовь
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn ${
-                      category === "career" ? "btn-soft" : "btn-outline"
-                    }`}
-                    onClick={() => handleCategoryChange("career")}
-                    disabled={isSubmitting || useCustomQuestion}
-                  >
-                    Работа
-                  </button>
-                  {/* можно добавить и другие */}
+                  {THREE_SPREAD_CATEGORIES.map((cat) => (
+                    <button
+                      key={cat.value}
+                      type="button"
+                      className={`btn ${
+                        category === cat.value ? "btn-soft" : "btn-outline"
+                      }`}
+                      onClick={() => handleCategoryChange(cat.value)}
+                      disabled={isSubmitting || useCustomQuestion}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -290,6 +285,7 @@ export default function SpreadsScreen({
         {/* Ритуал выбора карт */}
         <div className="card spread-picker">
           <h3 className="section-subtitle">Ритуал выбора карт</h3>
+
           <TarotCarousel
             mode="picker"
             maxCards={maxCards}
@@ -301,10 +297,11 @@ export default function SpreadsScreen({
           />
 
           <p className="muted">
-            Нажмите на карту или кнопку, чтобы поймать карту. Для расклада на{" "}
-            {maxCards} {maxCards === 1 ? "карту" : "карты"} нужно сделать{" "}
-            {maxCards} «пойманий».
-            {pickedCount >= maxCards && " Карты выбраны, можно делать расклад."}
+            {maxCards === 1
+              ? "Сконцентрируйтесь и поймайте свою карту дня."
+              : "Поймайте все три карты, а затем сделайте расклад."}
+            {pickedCount >= maxCards &&
+              " Карты выбраны, можно делать расклад."}
           </p>
         </div>
 
