@@ -118,14 +118,15 @@ export default function TarotCarousel({
         </p>
       </div>
 
-      {/* Бесконечная на вид лента рубашек.
-          Вся динамика — через скролл/свайп пользователя + CSS (overflow-x, snap и т.п.). */}
-      <div className="tarot-carousel-wheel">
-        {Array.from({ length: 40 }).map((_, idx) => (
-          <div key={idx} className="tarot-card wheel-card">
-            <div className="tarot-card-back" />
-          </div>
-        ))}
+      {/* Контейнер барабана для удобного управления скроллом/маской в CSS */}
+      <div className="tarot-carousel-wheel-container">
+        <div className="tarot-carousel-wheel">
+          {Array.from({ length: 40 }).map((_, idx) => (
+            <div key={idx} className="tarot-card wheel-card">
+              <div className="tarot-card-back" />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Центральная карта — "зона ловли" */}

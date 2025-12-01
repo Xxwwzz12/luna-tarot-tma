@@ -77,6 +77,11 @@ body {
   margin-bottom: 12px;
 }
 
+/* Карточка-пикер расклада — не даём горизонтальный скролл из-за центральной карты */
+.card.spread-picker {
+  overflow-x: hidden;
+}
+
 /* =========================================================
    НИЖНЯЯ НАВИГАЦИЯ
    ========================================================= */
@@ -506,14 +511,15 @@ button:disabled {
 
 /* Центральная карта: wrapper, чтобы не залезать на текст */
 .tarot-card.main-wrapper {
+  margin: 8px auto 12px;
   display: flex;
   justify-content: center;
   align-items: center;
-  margin: 8px 0 12px;
 }
 
-/* Основная карта в карусели / рулетке — адаптив, без absolute и высоких z-index */
+/* Основная карта в карусели / рулетке — адаптив, без absolute и z-index>1 */
 .tarot-card.main {
+  position: relative;
   width: min(55vw, 220px);
   height: min(75vw, 340px);
   max-width: 100%;
@@ -594,33 +600,33 @@ button:disabled {
   flex: 1;
 }
 
-/* Колесо рулетки — горизонтальный барабан с нормальной физикой свайпа */
-.tarot-carousel-wheel {
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
-
+/* =========================================================
+   КОЛЕСО РУЛЕТКИ — БАРАБАН
+   ========================================================= */
+/* Контейнер, который не даёт барабану растягивать страницу */
+.tarot-carousel-wheel-container {
+  width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-
-  scroll-snap-type: x mandatory;
-
-  padding: 8px 12px;
-  margin-bottom: 12px;
-
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x;
 }
 
-.tarot-carousel-wheel::-webkit-scrollbar {
-  display: none;
+/* Сам барабан — длинная лента */
+.tarot-carousel-wheel {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  padding: 8px 16px;
+  width: max-content;
+  scroll-snap-type: x mandatory;
 }
 
-/* Плиточки-барабан */
-.wheel-card {
+/* Карта в барабане */
+.tarot-carousel-wheel .wheel-card {
   flex: 0 0 auto;
-  width: 60px;
-  height: 96px;
+  width: 56px;
+  height: 90px;
   scroll-snap-align: center;
 
   display: flex;
@@ -634,27 +640,25 @@ button:disabled {
   opacity: 0.7;
 }
 
-/* 3 карты в ряд — viewer-режим, горизонтальная лента */
-.tarot-carousel-cards-grid {
+/* =========================================================
+   3 КАРТЫ В РЕЗУЛЬТАТЕ — ГОРИЗОНТАЛЬНЫЙ ГРИД
+   ========================================================= */
+.tarot-carousel-multi .tarot-carousel-cards-grid {
   display: flex;
   flex-direction: row;
-  gap: 12px;
-
   justify-content: center;
-  align-items: flex-start;
-
+  gap: 16px;
   flex-wrap: nowrap;
   overflow-x: auto;
-  overflow-y: hidden;
-
-  padding: 8px 4px 4px;
-
-  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
 }
 
-.tarot-carousel-cards-grid::-webkit-scrollbar {
+/* скрываем горизонтальный скролл, если что */
+.tarot-carousel-multi .tarot-carousel-cards-grid::-webkit-scrollbar {
   display: none;
 }
+
+/* (tarot-card-view уже flex: 0 0 auto; max-width: 140px выше) */
 
 /* =========================================================
    ПОДПИСИ К КАРТЕ (позиция / имя)
