@@ -35,6 +35,11 @@ export default function TarotCarousel({
   const cards = selectedCards || [];
   const effectiveMax = maxCards || cards.length || 1;
 
+  // --- Состояния для picker-режима (рулетка) ---
+  const [isSpinning, setIsSpinning] = useState(true);
+  const [isLocked, setIsLocked] = useState(false);
+  const [isFlipped, setIsFlipped] = useState(false);
+
   // ===================== VIEWER-МОД =====================
   if (mode === "viewer") {
     if (!cards.length) {
@@ -77,77 +82,81 @@ export default function TarotCarousel({
     );
   }
 
-  // ===================== PICKER-МОД (РУЛЕТКА) =====================
-  // selectedCards тут НЕ используем — это чистый ритуал.
+  // ===================== PICKER-МОД (ЖИВАЯ РУЛЕТКА) =====================
+
   const total = maxCards || 1;
   const count = pickedCount || 0;
+  const isDone = count >= total;
 
-  // Если уже поймали нужное количество карт — ничего не показываем
-  if (count >= total) {
+  // Все карты уже пойманы — ритуал не показываем
+  if (isDone) {
     return null;
   }
 
-  const nextIndex = count + 1;
+  const mainCardClassName =
+    "tarot-card main" +
+    (isSpinning ? " spinning" : "") +
+    (isFlipped ? " flipping" : "");
 
-  const [isSpinning, setIsSpinning] = useState(true);
-  const [isLocked, setIsLocked] = useState(false);
-
-  const handlePick = () => {
+  function handlePick() {
     if (isLocked) return;
+    if (!onPick) return;
 
-    // Ловим карту: стопаем вращение и даём время на flip-анимацию
     setIsLocked(true);
     setIsSpinning(false);
+    setIsFlipped(true);
 
     setTimeout(() => {
-      // Сообщаем наверх, что «одна карта поймана»
-      if (typeof onPick === "function") {
-        onPick();
-      }
+      // Сообщаем наверх, что пользователь «поймал» одну карту
+      onPick();
+      setIsFlipped(false);
 
-      // Сбрасываем локальное состояние для следующей карты
-      setIsLocked(false);
-      setIsSpinning(true);
-    }, 300); // 300мс под CSS-анимацию flipping
-  };
+      // Если это ещё не последняя карта — продолжаем крутить
+      if ((pickedCount || 0) + 1 < (maxCards || 1)) {
+        setIsSpinning(true);
+        setIsLocked(false);
+      }
+      // Если это последняя — при следующем рендере isDone === true,
+      // и рулетка просто исчезнет (return null выше).
+    }, 500);
+  }
 
   return (
     <div className="tarot-carousel tarot-carousel-picker">
       <div className="tarot-carousel-picker-header">
-        <div className="muted">
+        <p className="muted">
           {total === 1
-            ? "Сконцентрируйтесь и поймайте свою карту дня"
-            : `Карта ${nextIndex} из ${total}`}
-        </div>
+            ? "Сконцентрируйтесь и поймайте свою карту дня."
+            : `Поймайте все ${total} карты, а затем сделайте расклад.`}
+        </p>
       </div>
 
-      <div className="tarot-carousel-picker-main">
-        <div className="tarot-card main-wrapper">
-          <div
-            className={
-              "tarot-card main " +
-              (isSpinning ? "spinning " : "") +
-              (isLocked ? "flipping " : "")
-            }
-            onClick={handlePick}
-          >
-            {/* Рубашка — просто прямоугольник или back-картинка */}
-            <div className="tarot-card-back">
-              {/* Если используешь картинку рубашки: */}
-              {/* <img src="/images/tarot/back.png" alt="Рубашка карты" className="tarot-card-image" /> */}
-            </div>
+      {/* Маленький пояс из рубашек на фоне (чисто визуальный круг) */}
+      <div className="tarot-carousel-wheel">
+        {Array.from({ length: 7 }).map((_, idx) => (
+          <div key={idx} className="tarot-card wheel-card">
+            <div className="tarot-card-back" />
           </div>
-        </div>
-
-        <button
-          type="button"
-          className="btn btn-soft tarot-picker-button"
-          onClick={handlePick}
-          disabled={isLocked}
-        >
-          Поймать карту
-        </button>
+        ))}
       </div>
+
+      {/* Центральная большая карта-рулетка */}
+      <div className="tarot-card main-wrapper">
+        <div className={mainCardClassName} onClick={handlePick}>
+          <div className="tarot-card-back" />
+        </div>
+      </div>
+
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={handlePick}
+        disabled={isLocked}
+      >
+        {total === 1
+          ? "Поймать карту"
+          : `Поймать карту ${count + 1} из ${total}`}
+      </button>
     </div>
   );
 }

@@ -26,16 +26,17 @@ function formatDate(value) {
 }
 
 export default function HistoryScreen({
-  spreads,          // либо { items: [...], total_items, ... }, либо массив
-  selectedSpread,   // SpreadDetail | null
-  onSelectSpread,   // (id: number) => void
-  onAskQuestion,    // (spreadId: number, question: string) => Promise<void>
+  spreads,              // объект или массив
+  selectedSpread,       // SpreadDetail | null
+  onSelectSpread,       // (id: number) => void
+  onAskQuestion,        // (spreadId: number, question: string) => Promise<void>
   isAskingQuestion,
   onCloseDetail,
+  questions = [],       // ← ДОБАВЛЕНО ПО ТЗ
 }) {
   const [localQuestion, setLocalQuestion] = useState("");
 
-  // Поддержка двух форматов spreads: объект и массив
+  // spreads может быть объектом или массивом
   const items = Array.isArray(spreads)
     ? spreads
     : spreads?.items || [];
@@ -53,7 +54,9 @@ export default function HistoryScreen({
     onAskQuestion?.(detail.id, trimmed);
   };
 
-  // Режим списка
+  // -------------------------
+  // Режим СПИСКА
+  // -------------------------
   if (!detail) {
     return (
       <div className="page page-history">
@@ -83,11 +86,7 @@ export default function HistoryScreen({
                 </div>
 
                 <div className="history-item-body">
-                  <p
-                    className={
-                      spread.short_preview ? "" : "muted"
-                    }
-                  >
+                  <p className={spread.short_preview ? "" : "muted"}>
                     {spread.short_preview?.trim() ||
                       "Интерпретация пока отсутствует."}
                   </p>
@@ -100,9 +99,13 @@ export default function HistoryScreen({
     );
   }
 
-  // Режим детали расклада
+  // -------------------------
+  // Режим ДЕТАЛИ РАСКЛАДА
+  // -------------------------
   return (
     <div className="page page-history page-history-detail">
+
+      {/* Кнопка назад */}
       <button
         type="button"
         className="btn btn-ghost back-button"
@@ -116,15 +119,16 @@ export default function HistoryScreen({
           <div className="history-detail-title">
             Расклад #{detail.id} • {getSpreadTitle(detail.spread_type)}
           </div>
+
           <div className="history-detail-meta">
             {formatDate(detail.created_at)}
-            {detail.category && (
-              <> • {detail.category}</>
-            )}
+            {detail.category && <> • {detail.category}</>}
           </div>
         </div>
 
         <div className="history-detail-content">
+
+          {/* КАРУСЕЛЬ */}
           <div className="history-detail-carousel">
             <TarotCarousel
               mode="viewer"
@@ -133,18 +137,16 @@ export default function HistoryScreen({
             />
           </div>
 
+          {/* ИНТЕРПРЕТАЦИЯ */}
           <div className="history-detail-interpretation">
             <h3 className="section-subtitle">Интерпретация</h3>
-            <p
-              className={
-                detail.interpretation ? "" : "muted"
-              }
-            >
+            <p className={detail.interpretation ? "" : "muted"}>
               {detail.interpretation?.trim() ||
                 "Интерпретация пока отсутствует."}
             </p>
           </div>
 
+          {/* ФОРМА УТОЧНЯЮЩЕГО ВОПРОСА */}
           <div className="history-detail-question">
             <h3 className="section-subtitle">
               Уточняющий вопрос по раскладу
@@ -154,19 +156,14 @@ export default function HistoryScreen({
               className="textarea"
               placeholder="Сформулируйте дополнительный вопрос по этому раскладу…"
               value={localQuestion}
-              onChange={(e) =>
-                setLocalQuestion(e.target.value)
-              }
+              onChange={(e) => setLocalQuestion(e.target.value)}
               rows={3}
             />
 
             <button
               type="button"
               className="btn btn-primary"
-              disabled={
-                isAskingQuestion ||
-                !localQuestion.trim()
-              }
+              disabled={isAskingQuestion || !localQuestion.trim()}
               onClick={handleSubmitQuestion}
             >
               {isAskingQuestion
@@ -174,6 +171,34 @@ export default function HistoryScreen({
                 : "Задать вопрос по раскладу"}
             </button>
           </div>
+
+          {/* НОВЫЙ БЛОК: СПИСОК Q&A */}
+          <section className="history-detail-questions">
+            <h3 className="section-subtitle">Дополнительные вопросы</h3>
+
+            {questions.length === 0 && (
+              <p className="muted">
+                Вы пока не задавали дополнительных вопросов.
+              </p>
+            )}
+
+            {questions.length > 0 && (
+              <ul className="qa-list">
+                {questions.map((q) => (
+                  <li key={q.id} className="qa-item">
+                    <div>
+                      <b>Вопрос:</b> {q.question}
+                    </div>
+                    <div>
+                      <b>Ответ:</b>{" "}
+                      {q.answer?.trim() || "Ответ ещё не готов"}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
         </div>
       </div>
     </div>

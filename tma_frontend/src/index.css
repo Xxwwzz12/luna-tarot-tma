@@ -341,7 +341,7 @@ button:disabled {
 }
 
 /* =========================================================
-   КАРУСЕЛЬ ТАРО / КАРТЫ / РУЛЕТКА
+   КАРУСЕЛЬ / РУЛЕТКА / КАРТЫ
    ========================================================= */
 .page-spreads {
   display: flex;
@@ -366,7 +366,6 @@ button:disabled {
   margin-top: 8px;
 }
 
-/* Внутренняя зона под стопку карт */
 .tarot-carousel-shell {
   margin-top: 12px;
 }
@@ -386,7 +385,7 @@ button:disabled {
   margin-bottom: 4px;
 }
 
-/* Стопка/рулетка */
+/* Стопка / рулетка по центру */
 .tarot-stack {
   position: relative;
   height: 220px;
@@ -419,6 +418,8 @@ button:disabled {
   align-items: center;
   gap: 0.5rem;
   text-align: center;
+  max-width: 160px;
+  overflow: hidden;
 }
 
 /* Обёртка под картинку в TarotCardView */
@@ -439,14 +440,14 @@ button:disabled {
 
 /* Обёртка под центральную карту */
 .tarot-card-image-wrapper {
+  aspect-ratio: 3 / 5;
+  width: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
-  margin: 0 auto;
 }
 
-/* Адаптивный размер центральной карты и основной карты в стеке (поджатый) */
-.tarot-card-image-wrapper,
+/* Адаптивный размер центральной карты (рулетка) */
 .tarot-card.main {
   width: min(55vw, 220px);
   height: min(75vw, 340px);
@@ -469,7 +470,7 @@ button:disabled {
   transition: transform 0.3s ease;
 }
 
-/* Центральная карта: отдельный wrapper, чтобы не залезала на текст */
+/* Центральная карта: wrapper, чтобы не залезать на текст */
 .tarot-card.main-wrapper {
   display: flex;
   justify-content: center;
@@ -477,10 +478,10 @@ button:disabled {
   margin: 8px 0;
 }
 
-/* Основная карта в карусели/стеке */
+/* Основная карта в карусели / режиме рулетки */
 .tarot-card.main {
   position: relative;
-  z-index: 1; /* чтобы не перекрывала заголовок/текст */
+  z-index: 1;
   cursor: grab;
   touch-action: pan-y;
   backface-visibility: hidden;
@@ -491,20 +492,19 @@ button:disabled {
   cursor: grabbing;
 }
 
-/* Спин — подчёркивание вращения */
+/* Крутящаяся карта (рулетка) */
 .tarot-card.main.spinning {
-  transition: transform 0.12s ease-out;
   animation: tarot-spin 0.3s linear infinite;
 }
 
-/* Флип — в момент "поймал" */
+/* Флип при "поймал" */
 .tarot-card.main.flipping {
-  transition: transform 0.6s ease, opacity 0.6s ease;
   transform: rotateY(180deg);
+  transition: transform 0.6s ease, opacity 0.6s ease;
   opacity: 0.9;
 }
 
-/* Рубашка */
+/* Рубашка — PNG */
 .tarot-card-back {
   width: 100%;
   height: 100%;
@@ -512,26 +512,19 @@ button:disabled {
   background-image: url("/images/tarot/back.png");
   background-size: cover;
   background-position: center;
-  transition: transform 0.3s ease, opacity 0.3s ease;
   backface-visibility: hidden;
 }
 
-/* Анимация спина ("рулетка") */
+/* Анимация спина "рулетки" */
 @keyframes tarot-spin {
   0% {
-    transform: translateX(0) rotate(0deg);
-  }
-  25% {
-    transform: translateX(-4px) rotate(-2deg);
+    transform: rotate(0deg) scale(1);
   }
   50% {
-    transform: translateX(4px) rotate(2deg);
-  }
-  75% {
-    transform: translateX(-2px) rotate(-1deg);
+    transform: rotate(5deg) scale(1.03);
   }
   100% {
-    transform: translateX(0) rotate(0deg);
+    transform: rotate(-5deg) scale(1);
   }
 }
 
@@ -553,7 +546,7 @@ button:disabled {
   transform: translateX(30%) rotate(6deg);
 }
 
-/* Низ карусели */
+/* Нижний блок карусели */
 .carousel-controls {
   margin-top: 12px;
   display: flex;
@@ -566,18 +559,29 @@ button:disabled {
   flex: 1;
 }
 
-/* 3 карты в ряд — компактный грид */
+/* Визуал "колёсика" рулетки — мини-стопка карт */
+.tarot-carousel-wheel {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 8px 0 14px;
+}
+
+.wheel-card {
+  width: 40px;
+  height: 70px;
+  opacity: 0.6;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-subtle);
+}
+
+/* 3 карты в ряд — viewer-режим */
 .tarot-carousel-cards-grid {
   display: flex;
   gap: 12px;
   justify-content: center;
-  align-items: flex-start;
   flex-wrap: wrap;
-}
-
-.tarot-card-view {
-  flex: 1 1 100px;
-  max-width: 180px;
 }
 
 /* =========================================================

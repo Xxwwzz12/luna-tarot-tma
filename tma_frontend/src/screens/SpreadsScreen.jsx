@@ -1,7 +1,7 @@
 // tma_frontend/src/screens/SpreadsScreen.jsx
 
 import { useState } from "react";
-import TarotCarousel from "../TarotCarousel.jsx";
+import TarotCarousel from "../TarotCarousel";
 
 function getSpreadTitle(spreadType) {
   if (spreadType === "one") return "Карта дня";
@@ -226,14 +226,18 @@ export default function SpreadsScreen({
                     (при выборе категории свой вопрос очищается)
                   </span>
                 </label>
-                <div className="button-group">
+                <div className="spread-categories">
                   {THREE_SPREAD_CATEGORIES.map((cat) => (
                     <button
                       key={cat.value}
                       type="button"
-                      className={`btn ${
-                        category === cat.value ? "btn-soft" : "btn-outline"
-                      }`}
+                      className={
+                        "spread-category-chip" +
+                        (!useCustomQuestion && category === cat.value
+                          ? " active"
+                          : "") +
+                        (useCustomQuestion ? " disabled" : "")
+                      }
                       onClick={() => handleCategoryChange(cat.value)}
                       disabled={isSubmitting || useCustomQuestion}
                     >
@@ -288,8 +292,8 @@ export default function SpreadsScreen({
 
           <TarotCarousel
             mode="picker"
-            maxCards={maxCards}
             pickedCount={pickedCount}
+            maxCards={maxCards}
             onPick={() => {
               setPickedCount((prev) => Math.min(prev + 1, maxCards));
               setError(null);

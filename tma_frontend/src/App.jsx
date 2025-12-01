@@ -40,7 +40,6 @@ function App() {
   const [profile, setProfile] = useState(null);
 
   // История раскладов (список)
-  // Теперь это просто массив элементов списка, а не объект { items, ... }
   const [spreads, setSpreads] = useState(null);
 
   // Текущий расклад для вкладки "Расклады"
@@ -49,17 +48,17 @@ function App() {
   // Детальный расклад для вкладки "История"
   const [historyDetail, setHistoryDetail] = useState(null);
 
-  // AI-интерпретация текущего расклада (Спреды)
+  // AI-интерпретация текущего расклада
   const [isInterpreting, setIsInterpreting] = useState(false);
 
-  // Состояние Q&A под текущим раскладом (для SpreadsScreen, оставляем)
+  // Состояние Q&A под текущим раскладом (для SpreadsScreen)
   const [qaState, setQaState] = useState({
     question: "",
     isAsking: false,
     answer: null,
   });
 
-  // Флаг отправки вопроса (для HistoryScreen)
+  // Флаг отправки вопроса для истории
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
 
   // Общие статусы
@@ -80,6 +79,9 @@ function App() {
   const [newQuestion, setNewQuestion] = useState("");
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState(false);
+
+  // 🆕 Храним вопросы по каждому раскладу: { [spreadId]: Question[] }
+  const [questionsBySpread, setQuestionsBySpread] = useState({});
 
   // Лог initData один раз (диагностика)
   useEffect(() => {
@@ -231,7 +233,7 @@ function App() {
         const detail = res.data; // SpreadDetail
         console.log("[TMA] New spread detail:", detail);
 
-        // важно: это только для вкладки "Расклады"
+        // только для вкладки "Расклады"
         setCurrentSpread(detail);
         setActiveTab("spreads");
 
@@ -301,7 +303,7 @@ function App() {
     }
   }
 
-  // Выбор расклада из истории → отдельный detail для History
+  // Выбор расклада из истории → загружаем detail + вопросы
   async function handleSelectSpreadFromHistory(id) {
     if (!id) return;
     try {
@@ -310,10 +312,18 @@ function App() {
 
       if (res?.ok && res.data) {
         setHistoryDetail(res.data);
-        // по желанию можно всегда фокусировать вкладку "История":
-        // setActiveTab("history");
       } else {
         console.warn("[TMA] Failed to load spread detail", res);
+      }
+
+      // 🆕 Дополнительно подгружаем вопросы по этому раскладу
+      console.log("[TMA] API GET /spreads/%s/questions", id);
+      const questionsRes = await apiGet(`/spreads/${id}/questions`);
+      if (questionsRes?.ok && questionsRes.data) {
+        setQuestionsBySpread((prev) => ({
+          ...prev,
+          [id]: questionsRes.data,
+        }));
       }
     } catch (e) {
       console.error("[TMA] Error in handleSelectSpreadFromHistory", e);
@@ -340,15 +350,22 @@ function App() {
       );
 
       if (res?.ok && res.data) {
-        // Для SpreadsScreen — обновляем qaState, если нужно там показывать
+        // Обновляем компактное состояние Q&A (для SpreadsScreen)
         setQaState({
           question: questionText,
           isAsking: false,
           answer: res.data,
         });
 
-        // Для HistoryScreen — можно обновить historyDetail, если бэк вернёт
-        // обновлённый detail с вопросами; пока просто логируем.
+        // 🆕 Обновляем список вопросов по этому раскладу
+        setQuestionsBySpread((prev) => ({
+          ...prev,
+          [effectiveSpreadId]: [
+            ...(prev[effectiveSpreadId] || []),
+            res.data,
+          ],
+        }));
+
         console.log("[TMA] Question created for spread:", res.data);
       } else {
         console.warn("[TMA] Failed to ask question", res);
@@ -395,7 +412,7 @@ function App() {
             // создание/сброс расклада
             onCreateSpread={handleCreateSpread}
             onResetCurrentSpread={handleResetCurrentSpread}
-            // старый Q&A-список, если ещё нужен
+            // старый Q&A-список (если ещё нужен)
             questions={questions}
             newQuestion={newQuestion}
             onNewQuestionChange={handleNewQuestionChange}
@@ -415,6 +432,12 @@ function App() {
             onAskQuestion={handleAskQuestion}
             isAskingQuestion={isAskingQuestion}
             onCloseDetail={() => setHistoryDetail(null)}
+            // 🆕 список вопросов для выбранного расклада
+            questions={
+              historyDetail
+                ? questionsBySpread[historyDetail.id] || []
+                : []
+            }
           />
         );
       case "profile":
