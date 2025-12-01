@@ -486,6 +486,7 @@ button:disabled {
   width: 100%;
   aspect-ratio: 3 / 5;
   margin: 0 auto;
+  overflow: hidden;
 }
 
 /* Изображение карты */
@@ -507,17 +508,15 @@ button:disabled {
 .tarot-card.main-wrapper {
   display: flex;
   justify-content: center;
-  margin: 12px 0;
+  align-items: center;
+  margin: 8px 0 12px;
 }
 
-/* Основная карта в карусели / рулетке — адаптив, без absolute */
+/* Основная карта в карусели / рулетке — адаптив, без absolute и высоких z-index */
 .tarot-card.main {
-  position: relative;
   width: min(55vw, 220px);
   height: min(75vw, 340px);
-  max-width: 220px;
-  max-height: 340px;
-  z-index: 1;
+  max-width: 100%;
   cursor: grab;
   touch-action: pan-y;
   backface-visibility: hidden;
@@ -595,25 +594,39 @@ button:disabled {
   flex: 1;
 }
 
-/* Колесо рулетки — горизонтальный барабан */
+/* Колесо рулетки — горизонтальный барабан с нормальной физикой свайпа */
 .tarot-carousel-wheel {
   display: flex;
-  overflow-x: auto;
-  padding: 8px 0;
+  flex-direction: row;
   gap: 8px;
+
+  overflow-x: auto;
+  overflow-y: hidden;
+
   scroll-snap-type: x mandatory;
+
+  padding: 8px 12px;
+  margin-bottom: 12px;
+
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
 }
 
 .tarot-carousel-wheel::-webkit-scrollbar {
   display: none;
 }
 
-.tarot-carousel-wheel .wheel-card {
+/* Плиточки-барабан */
+.wheel-card {
   flex: 0 0 auto;
   width: 60px;
   height: 96px;
   scroll-snap-align: center;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
   border-radius: 10px;
   background-image: url("/images/tarot/back.png");
   background-size: cover;
@@ -621,16 +634,22 @@ button:disabled {
   opacity: 0.7;
 }
 
-/* 3 карты в ряд — viewer-режим, горизонтальный скролл */
+/* 3 карты в ряд — viewer-режим, горизонтальная лента */
 .tarot-carousel-cards-grid {
   display: flex;
   flex-direction: row;
+  gap: 12px;
+
   justify-content: center;
   align-items: flex-start;
-  gap: 12px;
+
   flex-wrap: nowrap;
   overflow-x: auto;
-  padding: 8px 0;
+  overflow-y: hidden;
+
+  padding: 8px 4px 4px;
+
+  -webkit-overflow-scrolling: touch;
 }
 
 .tarot-carousel-cards-grid::-webkit-scrollbar {

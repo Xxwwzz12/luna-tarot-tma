@@ -56,9 +56,6 @@ class ProfileService:
         """
         Собирает "сырой" Telegram/dev-профиль из того,
         что пришло в get_or_create_profile через **defaults.
-
-        По сути это данные, извлечённые из initData или dev-хедеров
-        (username, first_name, last_name, birth_date, gender).
         """
         return {
             "username": defaults.get("username"),
@@ -74,30 +71,27 @@ class ProfileService:
 
     def get_or_create_profile(self, user_id: int, **defaults: Any) -> ProfileModel:
         """
-        ТЗ 6.1 — жёсткий приоритет БД над dev/Telegram.
+        ТЗ 5.2 / 6.1 — ЖЁСТКИЙ приоритет БД над dev/Telegram.
 
-        Алгоритм:
+        Логика:
 
-        1) Читаем БД:
-             db_profile = self._repo.get_profile(user_id)
-
-        2) Если db_profile есть (не None):
-             - НЕ используем dev/Telegram вообще.
-             - Собираем ProfileModel только из db_profile.
-
-        3) Если db_profile отсутствует:
-             - получаем tg = self._get_telegram_or_dev_profile(...);
-             - формируем payload из tg-данных;
-             - делаем db_profile = self._repo.upsert_profile(user_id, payload);
-             - возвращаем ProfileModel по db_profile.
+        1) db_profile = repo.get_profile(user_id)
+        2) Если db_profile есть:
+             - вообще не смотрим на dev/Telegram;
+             - возвращаем ProfileModel ТОЛЬКО из db_profile.
+        3) Если db_profile нет:
+             - берём tg = _get_telegram_or_dev_profile(...);
+             - формируем payload из tg;
+             - создаём запись в БД через upsert_profile;
+             - перечитываем из БД и возвращаем ProfileModel.
         """
         db_profile = self._repo.get_profile(user_id)
 
-        # 2) Запись в БД уже есть → dev/Telegram игнорируем, возвращаем только БД
+        # 2) В БД уже есть профиль → dev/Telegram не смотрим вообще
         if db_profile is not None:
             return ProfileModel(**db_profile)
 
-        # 3) Записи в БД нет → инициализируем из dev/Telegram-профиля
+        # 3) В БД нет профиля → создаём из dev/Telegram один раз
         tg = self._get_telegram_or_dev_profile(defaults)
 
         payload: dict[str, Any] = {
@@ -109,34 +103,55 @@ class ProfileService:
             "gender": tg.get("gender"),
         }
 
-        db_profile = self._repo.upsert_profile(user_id, payload)
+        self._repo.upsert_profile(user_id, payload)
+
+        # ещё раз читаем из БД (на случай, если репозиторий что-то дополнил)
+        db_profile = self._repo.get_profile(user_id) or payload
         return ProfileModel(**db_profile)
 
     def update_profile(self, user_id: int, body: Any) -> ProfileModel:
         """
-        ТЗ 6.1 — update_profile:
+        ТЗ 5.1 — update_profile обязан писать именно body в репозиторий.
 
-        1) Сформировать payload из body (first_name, last_name, birth_date,
-           gender, username при необходимости);
-        2) вызвать self._repo.upsert_profile(user_id, payload);
-        3) вернуть self.get_or_create_profile(user_id) — который уже не трогает
-           dev-профиль, т.к. запись в БД появилась.
+        Логика:
+
+        1) existing = repo.get_profile(user_id) (чтобы сохранить username, если он был);
+        2) сформировать payload из body (first_name, last_name, birth_date, gender,
+           username при необходимости);
+        3) вызвать repo.upsert_profile(user_id, payload);
+        4) вернуть self.get_or_create_profile(user_id).
+
+        ВАЖНО:
+        - НИГДЕ здесь НЕ трогаем dev/Telegram профиль.
         """
-        # 1) нормализуем body → dict
+        # 1) читаем текущее состояние из БД (можем вытащить username и прочее)
+        existing = self._repo.get_profile(user_id) or {}
+
+        # 2) нормализуем body → dict
         if hasattr(body, "dict"):
-            payload: dict[str, Any] = body.dict(exclude_unset=True)
+            body_data: dict[str, Any] = body.dict(exclude_unset=True)
         elif isinstance(body, dict):
-            payload = dict(body)
+            body_data = dict(body)
         else:
             raise TypeError(
                 "update_profile body must be a dict or have a .dict() method"
             )
 
-        # user_id всегда берём из аргумента
-        payload["user_id"] = user_id
+        # 3) формируем payload именно из body + существующего username
+        payload: dict[str, Any] = {
+            "user_id": user_id,
+            # username берём из existing, чтобы не терять dev/username,
+            # если фронт его не редактирует. Но это уже значение ИЗ БД,
+            # а не из dev-профиля.
+            "username": body_data.get("username", existing.get("username")),
+            "first_name": body_data.get("first_name"),
+            "last_name": body_data.get("last_name"),
+            "birth_date": body_data.get("birth_date"),
+            "gender": body_data.get("gender"),
+        }
 
-        # 2) сохраняем в БД
+        # 4) сохраняем в БД
         self._repo.upsert_profile(user_id, payload)
 
-        # 3) возвращаем актуальный профиль ИЗ БД
+        # 5) возвращаем актуальный профиль ИЗ БД
         return self.get_or_create_profile(user_id)

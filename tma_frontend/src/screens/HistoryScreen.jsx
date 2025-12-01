@@ -32,11 +32,11 @@ export default function HistoryScreen({
   onAskQuestion,        // (spreadId: number, question: string) => Promise<void>
   isAskingQuestion,
   onCloseDetail,
-  questions = [],       // массив вопросов/ответов по текущему раскладу
+  questions = [],       // может быть чем угодно — ниже жёстко нормализуем
 }) {
   const [localQuestion, setLocalQuestion] = useState("");
 
-  // безопасная работа с questions
+  // Жёсткая нормализация questions: дальше работаем ТОЛЬКО с safeQuestions
   const safeQuestions = Array.isArray(questions) ? questions : [];
 
   // spreads может быть объектом или массивом
@@ -107,7 +107,6 @@ export default function HistoryScreen({
   // -------------------------
   return (
     <div className="page page-history page-history-detail">
-
       {/* Кнопка назад */}
       <button
         type="button"
@@ -130,7 +129,6 @@ export default function HistoryScreen({
         </div>
 
         <div className="history-detail-content">
-
           {/* КАРУСЕЛЬ */}
           <div className="history-detail-carousel">
             <TarotCarousel
@@ -175,7 +173,7 @@ export default function HistoryScreen({
             </button>
           </div>
 
-          {/* БЛОК ВОПРОСОВ/ОТВЕТОВ — ТОЛЬКО В DETAIL-РЕЖИМЕ */}
+          {/* ВОПРОСЫ/ОТВЕТЫ — ТОЛЬКО В DETAIL-РЕЖИМЕ, ТОЛЬКО SAFEQUESTIONS */}
           <section className="history-detail-questions">
             <h3 className="section-subtitle">Вы задали вопросы</h3>
 
@@ -197,10 +195,10 @@ export default function HistoryScreen({
                   return (
                     <li key={q.id} className="qa-item">
                       <div className="qa-question">
-                        Вопрос: {q.question}
+                        {q.question}
                       </div>
                       <div className="qa-answer">
-                        Ответ: {answerText}
+                        {answerText}
                       </div>
                     </li>
                   );
@@ -208,7 +206,6 @@ export default function HistoryScreen({
               </ul>
             )}
           </section>
-
         </div>
       </div>
     </div>

@@ -368,7 +368,7 @@ function App() {
       );
 
       if (res?.ok && res.data) {
-        const created = res.data; // одиночный вопрос
+        const created = res.data; // один объект вопроса
 
         // Обновляем компактное состояние Q&A (для SpreadsScreen, если нужно)
         setQaState({
