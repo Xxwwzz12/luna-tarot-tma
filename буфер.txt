@@ -1,252 +1,105 @@
-1) src/tma_api/spreads/sqlite_repository.py
-Краткий отчёт о реализации
-
-Инициализация схемы
-В конструкторе __init__ вызывается _init_schema(), которая через CREATE TABLE IF NOT EXISTS создаёт таблицы tma_spreads и tma_spread_questions строго по структуре из ТЗ / md. JSON-колоду не трогаем.
-
-Мапперы строк БД
-
-_row_to_spread(row) отдаёт dict с ключами: id, user_id, spread_type, category, user_question, cards (json.loads(cards_json)), interpretation, created_at.
-
-_row_to_question(row) маппит строку tma_spread_questions в dict с: id, spread_id, user_id, question, answer, status, created_at.
-Подключён row_factory = sqlite3.Row в _get_connection.
-
-save_spread
-Поддерживает insert + update:
-
-Если data["id"] есть и > 0 → UPDATE tma_spreads ... WHERE id = ?, возвращает тот же id.
-
-Иначе INSERT INTO tma_spreads (...) VALUES (...), сериализует cards в cards_json, возвращает lastrowid.
-
-get_spread
-Достаёт одну запись по id без фильтрации по user_id (это делает сервис). Если row is None → None, иначе → _row_to_spread(row).
-
-list_spreads
-
-Сначала считает total по user_id.
-
-Потом выборка с ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?.
-
-Каждую строку гоняет через _row_to_spread, возвращает (total, items).
-
-save_question
-Аналогично раскладам:
-
-При наличии id → UPDATE tma_spread_questions ... WHERE id = ?.
-
-Без id → INSERT INTO tma_spread_questions (...) VALUES (...).
-Возвращает id (старый или новый).
-
-list_questions
-Возвращает список вопросов по spread_id, отсортированный created_at ASC, id ASC, через _row_to_question. Полностью совместимо с ожидаемым интерфейсом SpreadRepository и текущей логикой SpreadService.
-
-2) src/user_database.py
-Краткий отчёт о реализации
-
-Добавлен TMA-специфичный get_connection():
-
-Используется путь src/data/luna_users.db.
-
-Гарантируется существование директории src/data.
-
-Для каждого вызова создаётся новый sqlite3.Connection.
-
-Включён row_factory = sqlite3.Row для доступа вида row["id"].
-
-Включён PRAGMA foreign_keys = ON на уровне подключения.
-
-Старая логика UserDatabase не тронута:
-
-По-прежнему использует DATABASE_URL и свой self.conn.
-
-Глобальный user_db = UserDatabase() остаётся как был.
-
-Все методы работы с пользователями, историями, вопросами работают по-старому.
-
-Интеграция с TMA:
-
-Теперь SQLiteSpreadRepository и TMA API могут использовать:
-
-from src.user_database import get_connection
-repo = SQLiteSpreadRepository(conn_factory=get_connection)
-
-
-Это даёт изолированный и предсказуемый доступ к SQLite для TMA, без воздействия на бота
-
-3) src/tma_api/spreads/repository.py
-Краткий отчёт по реализации
-
-Protocol синхронизирован
-SpreadRepository ровно соответствует ТЗ 23.3:
-
-def save_spread(self, data: dict[str, Any]) -> int: ...
-def get_spread(self, spread_id: int) -> dict[str, Any] | None: ...
-def list_spreads(self, user_id: int, offset: int, limit: int) -> tuple[int, list[dict[str, Any]]]: ...
-def save_question(self, data: dict[str, Any]) -> int: ...
-def list_questions(self, spread_id: int) -> list[dict[str, Any]]: ...
-
-
-Никаких user_id в сигнатурах get_spread / list_questions — проверка чужих данных должна быть на уровне сервиса.
-
-InMemorySpreadRepository
-
-Подогнан под эти же сигнатуры (они уже совпадали, так что изменений по сути нет).
-
-Логика фильтрации по user_id и пагинации — в list_spreads.
-
-list_questions принимает только spread_id.
-
-SQLiteSpreadRepository
-
-Добавлен класс с идентичными сигнатурами методам Protocol.
-
-Пока реализован как тонкая обёртка над InMemorySpreadRepository (рабочая заглушка), чтобы:
-
-уже сейчас можно было прокидывать зависимость SQLiteSpreadRepository в сервис;
-
-при этом не плодить NotImplementedError в рантайме;
-
-позже заменить внутренний _inner и методы на реальную работу с SQLite.
-
-Экспорт
-
-В __all__ добавлен SQLiteSpreadRepository, чтобы можно было безопасно импортировать:
-
-from .repository import SpreadRepository, InMemorySpreadRepository, SQLiteSpreadRepository
-
-4) src/tma_api/spreads/service.py
-📝 Кратко, что я изменил по ТЗ 23.4
-
-__init__ и репозиторий
-
-Сигнатура:
-
-def __init__(self, repo: SpreadRepository | None = None):
-
-
-Логика ровно как в ТЗ:
-
-if repo is not None:
-    self._repo = repo
-else:
-    use_sqlite = os.getenv("TMA_USE_SQLITE", "0") == "1"
-    if use_sqlite:
-        try:
-            from src.user_database import get_connection
-            self._repo = SQLiteSpreadRepository(get_connection)
-            logger.info("SpreadService: using SQLiteSpreadRepository")
-        except Exception:
-            logger.exception("Failed to init SQLiteSpreadRepository, falling back to InMemorySpreadRepository")
-            self._repo = InMemorySpreadRepository()
-    else:
-        logger.info("SpreadService: using InMemorySpreadRepository")
-        self._repo = InMemorySpreadRepository()
-
-
-Локальные in-memory репозитории из service.py убраны, используются классы из .repository.
-
-create_auto_spread
-
-После формирования record:
-
-record = {
-    "user_id": user_id,
-    "spread_type": spread_type,
-    "category": effective_category,
-    "user_question": user_question,
-    "cards": cards_payload,
-    "interpretation": interpretation,
-    "created_at": created_at,
-}
-
-spread_id = self._repo.save_spread(record)
-record["id"] = spread_id
-
-
-В SpreadDetail используется именно spread_id / record["id"].
-
-get_spreads
-
-Пагинация считается в сервисе:
-
-if limit <= 0:
-    limit = 10
-page = max(page, 1)
-offset = (page - 1) * limit
-
-
-Repo вызывается так:
-
-total_items, items_raw = self._repo.list_spreads(
-    user_id=user_id,
-    offset=offset,
-    limit=limit,
-)
-
-
-total_pages считаем по total_items.
-
-Остальная логика — SpreadListItem, short_preview, category и has_questions — оставлена, только has_questions теперь через _spread_has_questions(self._repo, s).
-
-get_spread
-
-Больше нет доступа к _SPREADS; только:
-
-raw = self._repo.get_spread(spread_id)
-if not raw or raw.get("user_id") != user_id:
-    raise ValueError("spread_not_found")
-
-
-Далее SpreadDetail строится из:
-
-raw["cards"],
-
-raw["interpretation"],
-
-raw["category"],
-
-raw["user_question"].
-
-add_spread_question
-
-Сначала проверка расклада:
-
-raw_spread = self._repo.get_spread(spread_id)
-if not raw_spread or raw_spread.get("user_id") != user_id:
-    raise ValueError("spread_not_found")
-
-
-Запись вопроса:
-
-record = {
-    "spread_id": spread_id,
-    "user_id": user_id,
-    "question": question,
-    "answer": None,
-    "status": "pending",
-    "created_at": created_at,
-}
-
-qid = self._repo.save_question(record)
-record["id"] = qid
-
-
-Возвращаем SpreadQuestionModel(**record).
-
-Ответ AI на этом шаге не генерируем: статус "pending", answer None (готово под асинхронный pipeline).
-
-get_spread_questions
-
-Сначала убеждаемся, что расклад принадлежит пользователю:
-
-raw_spread = self._repo.get_spread(spread_id)
-if not raw_spread or raw_spread.get("user_id") != user_id:
-    raise ValueError("spread_not_found")
-
-
-Дальше:
-
-rows = self._repo.list_questions(spread_id)
-rows_sorted = sorted(rows, key=lambda r: r.get("created_at") or "")
-items = [SpreadQuestionModel(**row) for row in rows_sorted]
-
+Погоди, перед тем как переходить к правкам
+
+Смотри как должны работать расклады, если выбереаешь расклад на одну карту, то категори подставвляется и передается ИИ автоматически: карта дня" промт расскажи что значит в разрезе карты дня текуща карта для пользователя и передается данные пользователя и выбранная карта. На карту дня также должна быть карусель с выьором одной карты. Размера картинки карты должен подгоняться под размер устройства.
+
+После того как карты выбраны и интерпритация пришла, кстати на время пока ответ генерируется ии должна бытьк какая-то заглушка в духе " ответ в процесссе, ожидайте" и нельзя ничего сделать пока ответ не придет. ДАлеее ответ приходит, все не нужно связанное с выбором долдно исчезать, должно отсаваться только выбранная/ые для трех карт карты описание картЮ картинкаи карт и результат интерпритации. должна выходить кнопка "задать вопрос по раскалду"
+Для трех карт почти таже самая механика, но главное это то что должно быть жесткое разделение, либо категория из выбора либо свой вопрос, при выьоре этой  категори, т.е. ты сначал выбираешь свой вопрос и потом тебье окно с вопросом, автоматом его не надо выводить. Также для всех расклажов - возможность задавть вопрос по результатам. Давай сейчас подгоним все под гужную реализацию
+
+На текщуий момент вот что в консоли брузера:
+[Telegram.WebView] > postEvent web_app_set_header_color {color_key: 'bg_color'}
+telegram-web-app.js:135 [Telegram.WebView] > postEvent web_app_set_bottom_bar_color {color: '#ffffff'}
+telegram-web-app.js:135 [Telegram.WebView] > postEvent web_app_request_theme 
+telegram-web-app.js:135 [Telegram.WebView] > postEvent web_app_request_viewport 
+telegram-web-app.js:135 [Telegram.WebView] > postEvent web_app_request_safe_area 
+telegram-web-app.js:135 [Telegram.WebView] > postEvent web_app_request_content_safe_area 
+index-DIKRq-qW.js:9 [TMA] API_BASE_URL: https://luna-tarot-tma.onrender.com
+index-DIKRq-qW.js:9 InitData in window.__tma: null
+index-DIKRq-qW.js:9 [TMA] API_BASE_URL: https://luna-tarot-tma.onrender.com
+index-DIKRq-qW.js:9 [TMA] API GET /profile
+index-DIKRq-qW.js:9 [TMA] API GET /profile 
+index-DIKRq-qW.js:9 [TMA] API GET /spreads?page=1&limit=10
+index-DIKRq-qW.js:9 [TMA] API GET /spreads?page=1&limit=10 
+index-DIKRq-qW.js:9 [TMA] Raw profile from API: {user_id: 123, username: 'dev_user', first_name: 'Dev', last_name: 'User', birth_date: null, …}
+index-DIKRq-qW.js:9 [TMA] Profile loaded: {user_id: 123, username: 'dev_user'}
+index-DIKRq-qW.js:9 [TMA] Spreads list loaded: 10 items
+index-DIKRq-qW.js:9 [TMA] Updating profile with payload: {first_name: 'Егор', last_name: 'Гуревич', birth_date: '1996-04-24', gender: 'male'}
+index-DIKRq-qW.js:9 [TMA] API POST /profile {first_name: 'Егор', last_name: 'Гуревич', birth_date: '1996-04-24', gender: 'male'}
+index-DIKRq-qW.js:9 [TMA] Profile updated: {ok: true, data: {…}, error: null}
+index-DIKRq-qW.js:9 [TMA] New profile from API: {user_id: 123, username: 'dev_user', first_name: 'Dev', last_name: 'User', birth_date: '1996-04-24', …}
+index-DIKRq-qW.js:9 [TMA] API POST /spreads {mode: 'auto', spread_type: 'one', category: 'daily', question: null}
+index-DIKRq-qW.js:9 [TMA] API POST /spreads {mode: 'auto', spread_type: 'one', category: 'daily', question: null}
+index-DIKRq-qW.js:9 [TMA] New spread detail: {id: 16, spread_type: 'one', category: 'daily', question: null, cards: Array(1), …}
+index-DIKRq-qW.js:9 [TMA] API GET /spreads/16/questions 
+
+Вот что в логаз бэкенда
+2025-11-30T17:38:28.827545697Z Using cached uvloop-0.22.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (3.8 MB)
+2025-11-30T17:38:28.836112663Z Using cached watchfiles-1.1.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (456 kB)
+2025-11-30T17:38:28.838603252Z Using cached websockets-15.0.1-cp311-cp311-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (182 kB)
+2025-11-30T17:38:28.840610804Z Using cached yarl-1.22.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (365 kB)
+2025-11-30T17:38:28.84287106Z Using cached iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+2025-11-30T17:38:28.844584907Z Using cached packaging-25.0-py3-none-any.whl (66 kB)
+2025-11-30T17:38:28.846424746Z Using cached sniffio-1.3.1-py3-none-any.whl (10 kB)
+2025-11-30T17:38:28.848143263Z Using cached annotated_types-0.7.0-py3-none-any.whl (13 kB)
+2025-11-30T17:38:28.849816159Z Using cached typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+2025-11-30T17:38:29.109033839Z Installing collected packages: json5, websockets, uvloop, urllib3, typing-extensions, tqdm, sniffio, six, pyyaml, python-dotenv, psycopg-binary, propcache, pluggy, packaging, multidict, jiter, iniconfig, idna, httptools, h11, frozenlist, distro, click, charset-normalizer, certifi, attrs, annotated-types, aiohappyeyeballs, yarl, uvicorn, typing-inspection, requests, python-dateutil, pytest, pydantic-core, psycopg, httpcore, anyio, aiosignal, watchfiles, starlette, pydantic, httpx, aiohttp, python-telegram-bot, openai, fastapi
+2025-11-30T17:38:33.006334506Z Successfully installed aiohappyeyeballs-2.6.1 aiohttp-3.13.2 aiosignal-1.4.0 annotated-types-0.7.0 anyio-4.12.0 attrs-25.4.0 certifi-2025.11.12 charset-normalizer-3.4.4 click-8.3.1 distro-1.9.0 fastapi-0.115.0 frozenlist-1.8.0 h11-0.16.0 httpcore-1.0.9 httptools-0.7.1 httpx-0.28.1 idna-3.11 iniconfig-2.3.0 jiter-0.12.0 json5-0.9.14 multidict-6.7.0 openai-2.8.1 packaging-25.0 pluggy-1.6.0 propcache-0.4.1 psycopg-3.2.1 psycopg-binary-3.2.1 pydantic-2.12.5 pydantic-core-2.41.5 pytest-7.4.0 python-dateutil-2.8.2 python-dotenv-1.0.0 python-telegram-bot-22.5 pyyaml-6.0.3 requests-2.31.0 six-1.17.0 sniffio-1.3.1 starlette-0.38.6 tqdm-4.67.1 typing-extensions-4.15.0 typing-inspection-0.4.2 urllib3-2.5.0 uvicorn-0.32.0 uvloop-0.22.1 watchfiles-1.1.1 websockets-15.0.1 yarl-1.22.0
+2025-11-30T17:38:33.088626618Z 
+2025-11-30T17:38:33.088642078Z [notice] A new release of pip is available: 24.0 -> 25.3
+2025-11-30T17:38:33.088645138Z [notice] To update, run: pip install --upgrade pip
+2025-11-30T17:38:36.417001667Z ==> Uploading build...
+2025-11-30T17:38:49.226611903Z ==> Uploaded in 9.6s. Compression took 3.2s
+2025-11-30T17:38:49.320104392Z ==> Build successful 🎉
+2025-11-30T17:38:52.175827542Z ==> Deploying...
+2025-11-30T17:39:21.038411539Z ==> Running 'python -m uvicorn src.tma_api.app:app --host 0.0.0.0 --port $PORT'
+2025-11-30T17:39:27.534967309Z /opt/render/project/src/.venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:383: UserWarning: Valid config keys have changed in V2:
+2025-11-30T17:39:27.534988609Z * 'allow_population_by_field_name' has been renamed to 'validate_by_name'
+2025-11-30T17:39:27.534993369Z   warnings.warn(message, UserWarning)
+2025-11-30T17:39:30.62980562Z INFO:     Started server process [55]
+2025-11-30T17:39:30.629831931Z INFO:     Waiting for application startup.
+2025-11-30T17:39:30.629836961Z INFO:     Application startup complete.
+2025-11-30T17:39:30.630452547Z INFO:     Uvicorn running on http://0.0.0.0:10000 (Press CTRL+C to quit)
+2025-11-30T17:39:30.756400309Z INFO:     127.0.0.1:52844 - "HEAD / HTTP/1.1" 404 Not Found
+2025-11-30T17:39:33.21370304Z ==> Your service is live 🎉
+2025-11-30T17:39:33.249467497Z ==> 
+2025-11-30T17:39:33.288654643Z ==> ///////////////////////////////////////////////////////////
+2025-11-30T17:39:33.32498115Z ==> 
+2025-11-30T17:39:33.356486697Z ==> Available at your primary URL https://luna-tarot-tma.onrender.com
+2025-11-30T17:39:33.389015154Z ==> 
+2025-11-30T17:39:33.420527771Z ==> ///////////////////////////////////////////////////////////
+2025-11-30T17:39:34.886156577Z INFO:     35.197.118.178:0 - "GET / HTTP/1.1" 404 Not Found
+2025-11-30T17:41:28.113295073Z INFO:     104.167.197.70:0 - "OPTIONS /spreads?page=1&limit=10 HTTP/1.1" 200 OK
+2025-11-30T17:41:28.124877147Z INFO:     104.167.197.70:0 - "OPTIONS /profile HTTP/1.1" 200 OK
+2025-11-30T17:41:28.844308081Z INFO:     104.167.197.70:0 - "GET /profile HTTP/1.1" 200 OK
+2025-11-30T17:41:40.778181604Z INFO:     104.167.197.70:0 - "GET /spreads?page=1&limit=10 HTTP/1.1" 200 OK
+2025-11-30T17:41:51.106225322Z INFO:     104.167.197.70:0 - "OPTIONS /profile HTTP/1.1" 200 OK
+2025-11-30T17:41:51.409227818Z INFO:     104.167.197.70:0 - "POST /profile HTTP/1.1" 200 OK
+2025-11-30T17:42:08.296901074Z INFO:     104.167.197.70:0 - "OPTIONS /spreads HTTP/1.1" 200 OK
+2025-11-30T17:42:08.605192929Z 2025-11-30 17:42:08,604 - src.user_database - INFO - 🗄️ UserDatabase: using SQLite DB at data/luna_users.db
+2025-11-30T17:42:08.61058213Z 2025-11-30 17:42:08,610 - src.user_database - INFO - ℹ️ Создаем таблицы с нуля...
+2025-11-30T17:42:08.652451091Z 2025-11-30 17:42:08,652 - src.user_database - INFO - ✅ Таблицы успешно созданы/мигрированы
+2025-11-30T17:42:08.652495272Z 2025-11-30 17:42:08,652 - src.user_database - INFO - 🔄 Проверка и миграция таблиц...
+2025-11-30T17:42:08.652828641Z 2025-11-30 17:42:08,652 - src.tma_api.tarot_deck - INFO - Loading tarot deck from /opt/render/project/src/data/tarot_deck.json
+2025-11-30T17:42:08.656504767Z 2025-11-30 17:42:08,656 - src.tma_api.tarot_deck - WARNING - Card has no code and id, generated fallback code: шут
+2025-11-30T17:42:08.656698763Z 2025-11-30 17:42:08,656 - src.tma_api.tarot_deck - INFO - Tarot deck loaded successfully (cards: 78)
+2025-11-30T17:42:09.837601538Z 2025-11-30 17:42:09,837 - src.ai_interpreter - WARNING - ai_interpreter: cannot import src.config, falling back to ENV-only config: No module named 'src.config'
+2025-11-30T17:42:21.541466795Z 2025-11-30 17:42:21,541 - src.tma_api.spreads.service - INFO - Created spread: user_id=123 spread_id=16 spread_type=one category=daily created_at=2025-11-30T17:42:20.232571
+2025-11-30T17:42:21.543398655Z INFO:     104.167.197.70:0 - "POST /spreads HTTP/1.1" 200 OK
+2025-11-30T17:42:21.846858893Z INFO:     104.167.197.70:0 - "OPTIONS /spreads/16/questions HTTP/1.1" 200 OK
+2025-11-30T17:42:24.706779199Z INFO:     104.167.197.70:0 - "GET /spreads/16/questions HTTP/1.1" 200 OK
+2025-11-30T17:43:20.825826972Z INFO:     188.17.209.110:0 - "OPTIONS /spreads?page=1&limit=10 HTTP/1.1" 200 OK
+2025-11-30T17:43:20.830268199Z INFO:     188.17.209.110:0 - "OPTIONS /profile HTTP/1.1" 200 OK
+2025-11-30T17:43:21.528478964Z INFO:     188.17.209.110:0 - "GET /profile HTTP/1.1" 200 OK
+2025-11-30T17:43:28.705764091Z INFO:     188.17.209.110:0 - "OPTIONS /spreads HTTP/1.1" 200 OK
+2025-11-30T17:43:33.436701814Z INFO:     188.17.209.110:0 - "GET /spreads?page=1&limit=10 HTTP/1.1" 200 OK
+2025-11-30T17:43:40.772797016Z 2025-11-30 17:43:40,770 - src.tma_api.spreads.service - INFO - Created spread: user_id=123 spread_id=17 spread_type=one category=daily created_at=2025-11-30T17:43:39.477346
+2025-11-30T17:43:40.772901508Z INFO:     188.17.209.110:0 - "POST /spreads HTTP/1.1" 200 OK
+2025-11-30T17:43:41.158317411Z INFO:     188.17.209.110:0 - "OPTIONS /spreads/17/questions HTTP/1.1" 200 OK
+2025-11-30T17:43:43.974610299Z INFO:     188.17.209.110:0 - "GET /spreads/17/questions HTTP/1.1" 200 OK
+2025-11-30T17:44:34.217569961Z ==> Detected service running on port 10000
+2025-11-30T17:44:34.376112419Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+2025-11-30T17:59:42.59398825Z INFO:     Shutting down
+2025-11-30T17:59:42.694449457Z INFO:     Waiting for application shutdown.
+2025-11-30T17:59:42.694585261Z INFO:     Application shutdown complete.
+2025-11-30T17:59:42.694747565Z INFO:     Finished server process [55]
+
+В логах фронтэнда чисто 

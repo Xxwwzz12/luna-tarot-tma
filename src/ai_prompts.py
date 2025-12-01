@@ -155,12 +155,14 @@ def build_spread_interpretation_prompt(
     spread_name = _get_spread_name(spread_type, cards)
     cards_text = _build_cards_text(spread_type, cards)
 
-    category_text = category or "общий вопрос"
+    raw_category = (category or "").strip()
+    category_text = raw_category or "общий вопрос"
 
     profile_block = ""
     if profile_context:
         profile_block = profile_context.strip() + "\n\n"
 
+    # Вопрос ПЕРЕД раскладом
     if question:
         q_clean = question.strip()
         if q_clean:
@@ -171,6 +173,9 @@ def build_spread_interpretation_prompt(
         question_block = ""
 
     # Подсказка ЛЛМ в зависимости от количества карт
+    st_norm = (spread_type or "").lower().strip()
+    is_daily_one = st_norm == "one" and raw_category.lower() == "daily"
+
     if len(cards) == 1:
         extra_hint = (
             "Это расклад на одну карту. Не придумывай дополнительные позиции и не дели "
@@ -185,6 +190,16 @@ def build_spread_interpretation_prompt(
     else:
         extra_hint = ""
 
+    # Специальное усиление для «Карты дня»
+    daily_hint = ""
+    if is_daily_one:
+        daily_hint = (
+            "Этот расклад — «Карта дня». Объясняй значение выпавшей карты именно в "
+            "контексте ближайшего дня пользователя: его дел, настроения, возможных "
+            "событий и общего эмоционального фона. Не уходи в слишком долгосрочные "
+            "прогнозы, фокусируйся на сегодняшнем и завтрашнем дне.\n\n"
+        )
+
     prompt = f"""
 Ты — профессиональный русскоязычный таролог с 20-летним стажем.
 
@@ -196,7 +211,7 @@ def build_spread_interpretation_prompt(
 5. Не используй технические форматы (JSON, списки ключ-значение и т.п.).
 6. Не используй HTML-разметку.
 
-{profile_block}Тип расклада: {spread_name}
+{daily_hint}{profile_block}Тип расклада: {spread_name}
 Категория вопроса: {category_text}{question_block}{extra_hint}Карты в раскладе:
 {cards_text}
 

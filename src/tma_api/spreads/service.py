@@ -327,21 +327,33 @@ class SpreadService:
           (spread_type, category/question);
         - в ответ приходит уже готовый расклад с картами и интерпретацией.
 
-        question здесь — «вопрос до расклада» (user_question).
-        Для spread_type == "one" считаем это «картой дня»:
-        - category принудительно "daily";
-        - user_question игнорируется (None).
+        ВАЖНО:
+        - для spread_type == "one" (карта дня) мы жёстко нормализуем значения:
+          category = "daily", user_question = None,
+          независимо от того, что пришло с фронта;
+        - для остальных типов:
+          category берём из аргумента category,
+          user_question — из аргумента question.
         """
         user_ctx = _get_user_ctx(user_id)
 
-        # «Вопрос до расклада»
-        user_question = question
-        normalized_category = category
-
-        # Логика "Карты дня" — one → daily, без вопроса
+        # 🔒 Жёсткая нормализация "карты дня"
+        #
+        # Эквивалент ТЗ:
+        # if body.spread_type == "one":
+        #     category = "daily"
+        #     question = None
+        # else:
+        #     category = body.category
+        #     question = body.question
+        #
+        # Здесь spread_type/category/question — уже "распакованные" поля тела запроса.
         if spread_type == "one":
-            normalized_category = "daily"
-            user_question = None
+            normalized_category: Optional[str] = "daily"
+            user_question: Optional[str] = None
+        else:
+            normalized_category = category
+            user_question = question
 
         # Явная обработка ошибок колоды
         try:
@@ -375,6 +387,7 @@ class SpreadService:
         interpretation = interpretation.strip()
 
         created_at = _now_iso()
+        # Здесь уже работаем только с нормализованной категорией
         effective_category = normalized_category or "general"
 
         # Структура записи для репозитория:
@@ -384,7 +397,7 @@ class SpreadService:
             "user_id": user_id,
             "spread_type": spread_type,
             "category": effective_category,   # daily/general
-            "user_question": user_question,   # вопрос ДО расклада
+            "user_question": user_question,   # вопрос ДО расклада (или None для one)
             "cards": cards_payload,           # полные карточки
             "interpretation": interpretation,
             "created_at": created_at,
@@ -523,7 +536,7 @@ class SpreadService:
             )
 
             # Категория в списке:
-            # - one → daily
+            # - one → daily (независимо от того, что лежит в raw.category)
             # - иначе — сохранённая или general
             if s.get("spread_type") == "one":
                 item_category = "daily"

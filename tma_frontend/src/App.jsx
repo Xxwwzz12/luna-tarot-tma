@@ -4,7 +4,6 @@ import {
   apiGet,
   apiPost,
   fetchSpreadQuestions,
-  askSpreadQuestion,
 } from "./api/client";
 
 import BottomNav from "./BottomNav";
@@ -44,10 +43,18 @@ function App() {
   const [spreads, setSpreads] = useState({ items: [] });
 
   // Текущий расклад (detail или элемент из списка)
-  // Важно: currentSpread намеренно НЕ сбрасывается при смене вкладок —
-  // чтобы можно было вернуться к уже открытому раскладу.
-  // currentSpread.cards — это «истинные» карты расклада с бэка (viewer-карусель).
+  // currentSpread.cards — карты расклада с бэка (viewer-карусель).
   const [currentSpread, setCurrentSpread] = useState(null);
+
+  // AI-интерпретация расклада
+  const [isInterpreting, setIsInterpreting] = useState(false);
+
+  // Состояние Q&A для текущего расклада
+  const [qaState, setQaState] = useState({
+    question: "",
+    isAsking: false,
+    answer: null,
+  });
 
   // Общие статусы
   const [loading, setLoading] = useState(false);
@@ -55,16 +62,14 @@ function App() {
   const [error, setError] = useState(null);
 
   // Параметры расклада
-  const [spreadType, setSpreadType] = useState("three"); // "one" | "three" | ...
+  const [spreadType, setSpreadType] = useState("three"); // "one" | "three"
   const [category, setCategory] = useState("love");
   const [question, setQuestion] = useState("");
 
-  // Выбранные карты пользователем в режиме picker (TarotCarousel-пикер).
-  // Это чисто фронтовый ритуал: POST /spreads от них не зависит.
-  // Здесь храним объекты карт (минимум: { id, position, ... }).
+  // Выбранные карты в режиме picker (фронтовый ритуал, не уходит на бэк)
   const [selectedCards, setSelectedCards] = useState([]);
 
-  // Q&A под раскладом
+  // История вопросов/ответов (старый Q&A-список, пока оставляем)
   const [questions, setQuestions] = useState([]);
   const [newQuestion, setNewQuestion] = useState("");
   const [questionsLoading, setQuestionsLoading] = useState(false);
@@ -92,7 +97,7 @@ function App() {
     }
   }, [theme]);
 
-  // Загрузка профиля с правильной распаковкой APIResponse
+  // Загрузка профиля
   async function fetchProfile() {
     console.log("[TMA] API GET /profile");
     const res = await apiGet("/profile");
@@ -110,7 +115,7 @@ function App() {
     }
   }
 
-  // Загрузка истории раскладов с правильной распаковкой APIResponse
+  // Загрузка истории раскладов
   async function fetchSpreadsList(page = 1, limit = 10) {
     console.log(
       "[TMA] API GET /spreads?page=%s&limit=%s",
@@ -132,7 +137,7 @@ function App() {
     }
   }
 
-  // Первичная загрузка профиля и истории раскладов
+  // Первичная загрузка профиля и истории
   useEffect(() => {
     (async () => {
       try {
@@ -151,7 +156,7 @@ function App() {
     })();
   }, []);
 
-  // Загрузка вопросов для расклада
+  // Загрузка списка вопросов для расклада
   async function loadQuestionsForSpread(spreadId) {
     if (!spreadId) {
       setQuestions([]);
@@ -170,15 +175,13 @@ function App() {
     }
   }
 
-  // Смена типа расклада — сбрасываем выбранные карты (picker)
+  // Смена типа расклада — сбрасываем визуальный выбор карт
   function handleSpreadTypeChange(type) {
     setSpreadType(type);
     setSelectedCards([]);
   }
 
-  // Выбор карты в режиме picker.
-  // Сигнатура под TarotCarousel: onSelectCard(card, index).
-  // selectedCards — это "выбор пользователя", никак не влияет на backend.
+  // Выбор карты в picker
   function handleSelectCard(card, index) {
     const maxCards = spreadType === "one" ? 1 : 3;
 
@@ -195,11 +198,9 @@ function App() {
       if (isDuplicate) return prev;
 
       let next = [...prev, card];
-
       if (next.length > maxCards) {
         next = next.slice(0, maxCards);
       }
-
       return next;
     });
   }
@@ -214,18 +215,20 @@ function App() {
 
       setLoading(true);
       setError(null);
+      setIsInterpreting(true);
+      setQaState({ question: "", isAsking: false, answer: null });
 
       console.log("[TMA] API POST /spreads", payload);
       const res = await apiPost("/spreads", payload);
 
       if (res?.ok && res.data) {
-        const detail = res.data; // SpreadDetail от бэка
+        const detail = res.data; // SpreadDetail
         console.log("[TMA] New spread detail:", detail);
 
         setCurrentSpread(detail);
         setActiveTab("spreads");
 
-        // Обновляем историю в памяти, если уже загружена
+        // Обновляем историю, если она уже загружена
         setSpreads((prev) => {
           if (!prev || !Array.isArray(prev.items)) return prev;
 
@@ -262,10 +265,11 @@ function App() {
       setError(err.message || "Не удалось создать расклад");
     } finally {
       setLoading(false);
+      setIsInterpreting(false);
     }
   }
 
-  // 🔧 Обновление профиля — версия с доплогом New profile from API
+  // Обновление профиля
   async function handleUpdateProfile(update) {
     console.log("[TMA] Updating profile with payload:", update);
     const res = await apiPost("/profile", update);
@@ -277,7 +281,7 @@ function App() {
     }
   }
 
-  // Ввод нового вопроса (с очисткой ошибки)
+  // Изменение текста нового вопроса (старый Q&A UI)
   function handleNewQuestionChange(e) {
     setNewQuestion(e.target.value);
     if (questionsError) {
@@ -285,20 +289,45 @@ function App() {
     }
   }
 
-  // Задать новый вопрос к раскладу
-  async function handleAskQuestion() {
-    if (!currentSpread || !newQuestion.trim()) return;
+  // Новый обработчик Q&A: handleAskQuestion(spreadId, question)
+  async function handleAskQuestion(spreadId, questionText) {
+    const effectiveSpreadId = spreadId ?? currentSpread?.id;
+    const text = (questionText ?? newQuestion ?? "").trim();
+
+    if (!effectiveSpreadId || !text) return;
+
     setQuestionsError("");
     setQuestionsLoading(true);
+
+    setQaState({
+      question: text,
+      isAsking: true,
+      answer: null,
+    });
+
     try {
-      const created = await askSpreadQuestion(
-        currentSpread.id,
-        newQuestion.trim()
-      );
-      setQuestions((prev) => [...prev, created]);
-      setNewQuestion("");
+      const res = await apiPost(`/spreads/${effectiveSpreadId}/questions`, {
+        question: text,
+      });
+
+      if (res?.ok && res.data) {
+        setQaState({
+          question: text,
+          isAsking: false,
+          answer: res.data,
+        });
+
+        // по желанию, поддерживаем список вопросов
+        setQuestions((prev) => [...prev, res.data]);
+        setNewQuestion("");
+      } else {
+        console.warn("[TMA] Failed to ask question", res);
+        setQaState((prev) => ({ ...prev, isAsking: false }));
+        setQuestionsError("Не удалось отправить вопрос. Попробуйте ещё раз.");
+      }
     } catch (e) {
       console.error("Failed to ask question:", e);
+      setQaState((prev) => ({ ...prev, isAsking: false }));
       setQuestionsError("Не удалось отправить вопрос. Попробуйте ещё раз.");
     } finally {
       setQuestionsLoading(false);
@@ -335,6 +364,10 @@ function App() {
             profile={profile}
             loading={loading}
             currentSpread={currentSpread}
+            // флаги состояния AI и Q&A
+            isInterpreting={isInterpreting}
+            qaState={qaState}
+            onAskQuestion={handleAskQuestion}
             // параметры расклада
             spreadType={spreadType}
             onSpreadTypeChange={handleSpreadTypeChange}
@@ -347,13 +380,12 @@ function App() {
             onSelectCard={handleSelectCard}
             // создание расклада
             onCreateSpread={handleCreateSpread}
-            // Q&A
+            // старый Q&A-список — пока тоже прокидываем
             questions={questions}
             newQuestion={newQuestion}
             onNewQuestionChange={handleNewQuestionChange}
             questionsLoading={questionsLoading}
             questionsError={questionsError}
-            onAskQuestion={handleAskQuestion}
             formatDate={formatDate}
           />
         );
