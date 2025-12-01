@@ -1,6 +1,6 @@
 // tma_frontend/src/components/TarotCarousel.jsx
 import React, { useState, useEffect } from "react";
-import TarotCardView from "./TarotCardView.jsx";
+import TarotCardView from "./components/TarotCardView.jsx";
 
 const LABELS_3 = ["Прошлое", "Настоящее", "Будущее"];
 
