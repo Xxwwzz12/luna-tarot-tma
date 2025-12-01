@@ -56,9 +56,10 @@ def _load_deck() -> None:
     """
     Загружает колоду из data/tarot_deck.json в _DECK и _CARDS_BY_CODE.
 
-    Поддерживает два варианта структуры JSON:
+    Поддерживает варианты структуры JSON:
     1) Список карт: [ { ... }, { ... }, ... ]
-    2) Словарь карт: { "0": { ... }, "1": { ... }, ... }
+    2) Словарь: { "0": {...}, "1": {...} }
+    3) Словарь с вложенными списками: { "major_arcana": [..], "minor_arcana": [..] }
     """
     global _DECK, _CARDS_BY_CODE
 
@@ -96,17 +97,34 @@ def _load_deck() -> None:
                 )
                 continue
             items.append(raw)
+
     elif isinstance(data, dict):
-        # альтернативный вариант: словарь id -> объект карты
-        for key, raw in data.items():
-            if not isinstance(raw, dict):
+        # 🔧 НОВАЯ ЛОГИКА: dict может хранить или объект, или список объектов
+        for key, value in data.items():
+            if isinstance(value, dict):
+                # один объект карты
+                items.append(value)
+            elif isinstance(value, list):
+                # список карт (наш случай: major_arcana / minor_arcana)
+                for idx, raw in enumerate(value):
+                    if not isinstance(raw, dict):
+                        logger.warning(
+                            "Tarot deck item for key %r at index %s is not an object, "
+                            "skipping: %r",
+                            key,
+                            idx,
+                            raw,
+                        )
+                        continue
+                    items.append(raw)
+            else:
                 logger.warning(
-                    "Tarot deck item for key %r is not an object, skipping: %r",
+                    "Tarot deck item for key %r is neither object nor list, "
+                    "skipping: %r",
                     key,
-                    raw,
+                    value,
                 )
-                continue
-            items.append(raw)
+
     else:
         logger.error(
             "Tarot deck JSON must be a list or dict of objects, got %s",
