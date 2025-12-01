@@ -96,8 +96,8 @@ export default function SpreadsScreen({
       return {
         mode: "interactive",
         spread_type: "one",
-        category: null,              // бэк сам поставит "daily"
-        question: null,              // вопрос не используется
+        category: null, // бэк сам поставит "daily"
+        question: null,
         cards: cardsCodes,
       };
     }
@@ -109,7 +109,7 @@ export default function SpreadsScreen({
       return {
         mode: "interactive",
         spread_type: "three",
-        category: null,             // при своём вопросе категорию не отправляем
+        category: null, // при своём вопросе категорию не отправляем
         question: trimmedQuestion,
         cards: cardsCodes,
       };
@@ -161,6 +161,17 @@ export default function SpreadsScreen({
       setError("Не удалось сделать расклад. Попробуйте ещё раз.");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // onPick из карусели — честный сигнал «карта поймана»
+  // handlePick вызывается после onPickCard (внутри TarotCarousel),
+  // поэтому к моменту вызова pickedCards уже обновлён.
+  const handlePick = () => {
+    // как только набрано нужное количество карт — можем сразу пытаться
+    // сделать расклад (валидация по вопросу/категории всё равно в handleSubmit)
+    if (pickedCards.length >= maxCards && !isSubmitting) {
+      void handleSubmit();
     }
   };
 
@@ -342,9 +353,7 @@ export default function SpreadsScreen({
             deck={FULL_TAROT_DECK}
             pickedCount={pickedCount}
             maxCards={maxCards}
-            onPick={() => {
-              // оставлено для совместимости, логика выбора в onPickCard
-            }}
+            onPick={handlePick}
             onPickCard={(card) => {
               setPickedCards((prev) => {
                 if (prev.length >= maxCards) return prev;

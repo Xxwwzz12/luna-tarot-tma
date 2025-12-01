@@ -1,160 +1,149 @@
 // tma_frontend/src/TarotCarousel.jsx
-import React, { useState, useRef, useEffect } from "react";
-import TarotCardView from "./components/TarotCardView.jsx";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+} from "react";
 
-const LABELS_3 = ["Прошлое", "Настоящее", "Будущее"];
-const REPEAT = 5; // сколько раз повторяем колоду в барабане
+const TOTAL_CARDS = 78;
 
-/**
- * @typedef {Object} Card
- * @property {string} code
- * @property {string} name
- * @property {string|null} [image_url]
- * @property {boolean} [is_reversed]
- * @property {string|number} [id]
- * @property {string} [positionLabel]
- */
+function clampIndex(index) {
+  const mod = index % TOTAL_CARDS;
+  return mod < 0 ? mod + TOTAL_CARDS : mod;
+}
 
-/**
- * @param {{
- *   mode?: "viewer" | "picker";
- *   selectedCards?: Card[];
- *   maxCards?: number;
- *   pickedCount?: number;
- *   onPick?: () => void;
- *   deck?: Card[];                      // полная колода (78 карт)
- *   onPickCard?: (card: Card) => void;  // коллбек с реально выбранной картой
- * }} props
- */
 export default function TarotCarousel({
   mode = "viewer",
   selectedCards = [],
-  maxCards = 1,
-  pickedCount = 0,
+  maxCards,
+  pickedCount,
   onPick,
   deck,
   onPickCard,
 }) {
-  const cards = selectedCards || [];
-  const effectiveMax = maxCards || cards.length || 1;
-
-  // ===================== VIEWER-МОД (без изменений по контракту) =====================
   if (mode === "viewer") {
-    if (!cards.length) {
-      return (
-        <div className="tarot-carousel tarot-carousel-empty">
-          <p className="muted">Карты пока не выбраны.</p>
-        </div>
-      );
-    }
-
-    // 1 карта — карта дня
-    if (effectiveMax === 1 || cards.length === 1) {
-      const card = cards[0];
-      const position = card.positionLabel || "Карта дня";
-
-      return (
-        <div className="tarot-carousel tarot-carousel-single">
-          <TarotCardView card={card} positionLabel={position} />
-        </div>
-      );
-    }
-
-    // 3 (и более) карты — статичная горизонтальная сетка
-    return (
-      <div className="tarot-carousel tarot-carousel-multi">
-        <div className="tarot-carousel-cards-grid">
-          {cards.slice(0, effectiveMax).map((card, index) => (
-            <TarotCardView
-              key={card.code || card.id || index}
-              card={card}
-              positionLabel={
-                card.positionLabel ||
-                LABELS_3[index] ||
-                `Карта ${index + 1}`
-              }
-            />
-          ))}
-        </div>
-      </div>
-    );
+    return <TarotCarouselViewer cards={selectedCards} />;
   }
 
-  // ===================== PICKER-МОД (почти бесконечный барабан) =====================
+  return (
+    <TarotCarouselPicker
+      maxCards={maxCards}
+      pickedCount={pickedCount}
+      onPick={onPick}
+      deck={deck}
+      onPickCard={onPickCard}
+    />
+  );
+}
 
+// =======================
+// VIEWER MODE
+// =======================
+
+function TarotCarouselViewer({ cards }) {
+  if (!cards || cards.length === 0) return null;
+
+  return (
+    <div className="tarot-carousel tarot-carousel-viewer">
+      <div className="tarot-carousel-strip">
+        {cards.map((card, idx) => {
+          const reversed = !!card.is_reversed;
+          const src = card.image_url || "/images/tarot/back.png";
+
+          return (
+            <div
+              className="tarot-card-slot"
+              key={card.code || card.id || idx}
+            >
+              <div
+                className={
+                  "tarot-card tarot-card-viewer" +
+                  (reversed ? " tarot-card-viewer-reversed" : "")
+                }
+              >
+                <img
+                  src={src}
+                  alt={card.name || "Карта Таро"}
+                  className={
+                    "tarot-card-image" +
+                    (reversed ? " tarot-card-image-reversed" : "")
+                  }
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// =======================
+// PICKER MODE (рулетка)
+// =======================
+
+function TarotCarouselPicker({
+  maxCards,
+  pickedCount,
+  onPick,
+  deck,
+  onPickCard,
+}) {
   const total = maxCards || 1;
   const count = pickedCount || 0;
   const isDone = count >= total;
 
-  // все карты пойманы — рулетку не показываем
+  // все карты пойманы — ритуал скрываем
   if (isDone) {
     return null;
   }
 
-  const [isLocked, setIsLocked] = useState(false); // только для блокировки кнопки от дабл-клика
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isSpinning, setIsSpinning] = useState(true);
 
-  const deckArray = Array.isArray(deck) && deck.length > 0 ? deck : null;
-
-  // формируем "почти бесконечный" пояс
-  const wheelItems = deckArray
-    ? Array.from(
-        { length: REPEAT * deckArray.length },
-        (_, idx) => deckArray[idx % deckArray.length]
-      )
-    : Array.from({ length: 40 }).map(() => null);
-
-  const wheelContainerRef = useRef(null);
-  const wheelRef = useRef(null);
-
-  // стартовая позиция — где-то в середине ленты, чтобы ощущение было "бесконечным"
+  // Бесконечная прокрутка: индекс 0–77, потом снова 0
   useEffect(() => {
-    if (!wheelContainerRef.current || !deckArray) return;
-    const container = wheelContainerRef.current;
+    if (!isSpinning) return;
 
-    // ширина карты + gap — подгони под реальный CSS при необходимости
-    const cardWidth = 56 + 8;
-    const middleRepeat = Math.floor(REPEAT / 2);
-    container.scrollLeft = middleRepeat * deckArray.length * cardWidth;
-  }, [deckArray]);
+    const id = window.setInterval(() => {
+      setCurrentIndex((prev) => clampIndex(prev + 1));
+    }, 80); // скорость, можно подстроить
 
-  function handlePick() {
-    if (isLocked) return;
+    return () => window.clearInterval(id);
+  }, [isSpinning]);
 
-    // Если нет реальной deck → работаем по старому контракту: только onPick
-    if (!deckArray || !wheelContainerRef.current) {
-      setIsLocked(true);
-      onPick?.();
-      setIsLocked(false);
-      return;
+  // 5 видимых «слотов»: -2, -1, 0, +1, +2 относительно currentIndex
+  const visibleIndices = useMemo(() => {
+    const res = [];
+    for (let offset = -2; offset <= 2; offset += 1) {
+      res.push(clampIndex(currentIndex + offset));
+    }
+    return res;
+  }, [currentIndex]);
+
+  const deckArray =
+    Array.isArray(deck) && deck.length > 0 ? deck : null;
+
+  const handlePick = useCallback(() => {
+    // 1) Если есть реальная колода — вычисляем выбранную карту
+    if (deckArray && deckArray.length > 0) {
+      const deckIndex = currentIndex % deckArray.length;
+      const selectedCard = deckArray[deckIndex];
+
+      if (typeof onPickCard === "function" && selectedCard) {
+        onPickCard(selectedCard);
+      }
     }
 
-    const container = wheelContainerRef.current;
-    const scrollLeft = container.scrollLeft;
-
-    // ширина карты + gap — должен совпадать с версткой
-    const cardWidth = 56 + 8;
-    const approxIndex = Math.round(scrollLeft / cardWidth);
-
-    const totalItems = REPEAT * deckArray.length;
-    const normalizedIndex =
-      ((approxIndex % totalItems) + totalItems) % totalItems;
-    const baseIndex = normalizedIndex % deckArray.length;
-
-    const selectedCard = deckArray[baseIndex];
-
-    setIsLocked(true);
-
-    // отдаём выбранную карту наружу
-    if (typeof onPickCard === "function" && selectedCard) {
-      onPickCard(selectedCard);
+    // 2) Старый контракт — сигнал «+1 карта выбрана»
+    if (typeof onPick === "function") {
+      onPick();
     }
 
-    // старый сигнал "+1 карта поймана"
-    onPick?.();
-
-    // разблокируем кнопку (выбор мгновенный, без таймеров)
-    setIsLocked(false);
-  }
+    // 3) Останавливаем карусель на текущей карте (можно убрать, если не нужно)
+    setIsSpinning(false);
+  }, [currentIndex, deckArray, onPick, onPickCard]);
 
   return (
     <div className="tarot-carousel tarot-carousel-picker">
@@ -162,41 +151,64 @@ export default function TarotCarousel({
         <p className="muted">
           {total === 1
             ? "Сконцентрируйтесь и поймайте свою карту дня."
-            : `Поймайте все ${total} карты, а затем сделайте расклад.`}
+            : `Поймайте карты (${count + 1} из ${total})`}
         </p>
       </div>
 
-      {/* Контейнер барабана для скролла и маски по краям */}
-      <div
-        className="tarot-carousel-wheel-container"
-        ref={wheelContainerRef}
-      >
-        <div className="tarot-carousel-wheel" ref={wheelRef}>
-          {wheelItems.map((card, idx) => (
-            <div key={idx} className="tarot-card wheel-card">
-              {card && card.image_url ? (
-                <img
-                  src={card.image_url}
-                  alt={card.name || "Карта Таро"}
-                  className="tarot-card-image"
-                />
-              ) : (
-                <div className="tarot-card-back" />
-              )}
-            </div>
-          ))}
+      <div className="tarot-carousel-window">
+        <div className="tarot-carousel-strip">
+          {visibleIndices.map((virtualIndex, slot) => {
+            const isMain = slot === 2; // центральный слот
+
+            // Если есть deck — подставляем реальные карты по индексу
+            let card = null;
+            if (deckArray && deckArray.length > 0) {
+              const deckIndex = virtualIndex % deckArray.length;
+              card = deckArray[deckIndex];
+            }
+
+            const hasFace = card && card.image_url;
+            const imgSrc = hasFace
+              ? card.image_url
+              : "/images/tarot/back.png";
+
+            return (
+              <div
+                key={`${virtualIndex}-${slot}`}
+                className={
+                  "tarot-card-slot" +
+                  (isMain ? " tarot-card-slot-main" : "")
+                }
+              >
+                <div
+                  className={
+                    "tarot-card tarot-card-back" +
+                    (isMain ? " tarot-card-main" : "")
+                  }
+                  onClick={isMain ? handlePick : undefined}
+                >
+                  {hasFace ? (
+                    <img
+                      src={imgSrc}
+                      alt={card?.name || "Карта Таро"}
+                      className="tarot-card-image"
+                    />
+                  ) : (
+                    <div className="tarot-card-back-inner" />
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
       <button
         type="button"
-        className="btn btn-primary"
-        disabled={isLocked}
+        className="button button-primary"
         onClick={handlePick}
       >
-        {total === 1
-          ? "Поймать карту"
-          : `Поймать карту ${count + 1} из ${total}`}
+        Поймать карту
       </button>
     </div>
   );
