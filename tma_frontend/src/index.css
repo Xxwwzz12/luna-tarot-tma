@@ -162,6 +162,23 @@ body {
   border-color: var(--accent-soft);
 }
 
+/* Категории раскладов (если используются отдельные чипы) */
+.spread-category-chip {
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.spread-category-chip.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+
 /* =========================================================
    ВКЛАДКИ
    ========================================================= */
@@ -185,6 +202,31 @@ body {
   background: var(--accent-soft);
   color: var(--accent);
   border-color: var(--accent-soft);
+}
+
+/* Segmented-control для типа расклада */
+.spread-type-toggle {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  gap: 4px;
+}
+
+.spread-type-toggle button {
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.spread-type-toggle button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 /* =========================================================
@@ -438,20 +480,16 @@ button:disabled {
   height: auto;
 }
 
-/* Обёртка под центральную карту */
+/* Обёртка под центральную карту / картинки в гриде */
 .tarot-card-image-wrapper {
   aspect-ratio: 3 / 5;
   width: 100%;
+  max-width: min(55vw, 220px);
+  max-height: min(75vh, 340px);
+  margin: 0 auto;
   display: flex;
   justify-content: center;
   align-items: center;
-}
-
-/* Адаптивный размер центральной карты (рулетка) */
-.tarot-card.main {
-  width: min(55vw, 220px);
-  height: min(75vw, 340px);
-  margin: 0 auto;
 }
 
 /* Изображение карты */
@@ -478,13 +516,16 @@ button:disabled {
   margin: 8px 0;
 }
 
-/* Основная карта в карусели / режиме рулетки */
+/* Основная карта в карусели / рулетке */
 .tarot-card.main {
   position: relative;
-  z-index: 1;
+  z-index: 1; /* не перекрывать заголовок */
   cursor: grab;
   touch-action: pan-y;
   backface-visibility: hidden;
+  width: min(55vw, 220px);
+  height: min(75vw, 340px);
+  max-width: 100%;
 }
 
 /* Во время перетаскивания */
@@ -504,7 +545,7 @@ button:disabled {
   opacity: 0.9;
 }
 
-/* Рубашка — PNG */
+/* Рубашка — PNG (MUST BE PNG) */
 .tarot-card-back {
   width: 100%;
   height: 100%;
@@ -515,7 +556,7 @@ button:disabled {
   backface-visibility: hidden;
 }
 
-/* Анимация спина "рулетки" */
+/* Анимация спина "рулетки" (больше как качающееся колесо) */
 @keyframes tarot-spin {
   0% {
     transform: rotate(0deg) scale(1);
@@ -559,21 +600,40 @@ button:disabled {
   flex: 1;
 }
 
-/* Визуал "колёсика" рулетки — мини-стопка карт */
+/* Визуал "колёсика" рулетки — пояс из рубашек */
 .tarot-carousel-wheel {
   display: flex;
   justify-content: center;
   gap: 6px;
   margin: 8px 0 14px;
+  overflow: hidden;
+  position: relative;
 }
 
+/* Плиточки в поясе */
 .wheel-card {
   width: 40px;
   height: 70px;
   opacity: 0.6;
   border-radius: 10px;
-  background: var(--bg-soft);
-  border: 1px solid var(--border-subtle);
+  background-image: url("/images/tarot/back.png");
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+}
+
+/* Когда колесо "крутится" — анимируем пояс (ожидается класс .spinning на контейнере) */
+.tarot-carousel-wheel.spinning .wheel-card {
+  animation: tarot-wheel 0.7s linear infinite;
+}
+
+@keyframes tarot-wheel {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-52px); /* ширина + gap, имитация движения пояса */
+  }
 }
 
 /* 3 карты в ряд — viewer-режим */

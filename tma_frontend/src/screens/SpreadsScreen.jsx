@@ -18,6 +18,8 @@ const THREE_SPREAD_CATEGORIES = [
   { value: "self", label: "Самопознание" },
 ];
 
+const POSITION_LABELS = ["Прошлое", "Настоящее", "Будущее"];
+
 export default function SpreadsScreen({
   currentSpread,
   onCreateSpread,       // (payload) => Promise<void>
@@ -165,6 +167,41 @@ export default function SpreadsScreen({
     setPickedCount(0);
   };
 
+  const renderPositionSummary = (cards) => {
+    if (!cards || !cards.length) return null;
+
+    if (cards.length === 1 || spreadType === "one" || currentSpread?.spread_type === "one") {
+      const card = cards[0];
+      const name = card?.name || card?.title || "Карта дня";
+      const isReversed = card?.is_reversed || card?.reversed;
+      return (
+        <p className="muted">
+          Карта дня: {name}
+          {isReversed ? " (перевернутая)" : ""}
+        </p>
+      );
+    }
+
+    return (
+      <ul className="spread-positions-list">
+        {cards.slice(0, 3).map((card, idx) => {
+          const label = POSITION_LABELS[idx] || `Карта ${idx + 1}`;
+          const name = card?.name || card?.title || label;
+          const isReversed = card?.is_reversed || card?.reversed;
+          return (
+            <li key={idx} className="spread-position-row">
+              <span className="muted small">{label}</span>
+              <span>
+                {name}
+                {isReversed ? " (перевернутая)" : ""}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
+
   // === РЕЖИМ: ещё нет текущего расклада — форма создания ===
   if (!currentSpread) {
     const isThree = spreadType === "three";
@@ -290,15 +327,17 @@ export default function SpreadsScreen({
         <div className="card spread-picker">
           <h3 className="section-subtitle">Ритуал выбора карт</h3>
 
-          <TarotCarousel
-            mode="picker"
-            pickedCount={pickedCount}
-            maxCards={maxCards}
-            onPick={() => {
-              setPickedCount((prev) => Math.min(prev + 1, maxCards));
-              setError(null);
-            }}
-          />
+          {pickedCount < maxCards && (
+            <TarotCarousel
+              mode="picker"
+              pickedCount={pickedCount}
+              maxCards={maxCards}
+              onPick={() => {
+                setPickedCount((prev) => Math.min(prev + 1, maxCards));
+                setError(null);
+              }}
+            />
+          )}
 
           <p className="muted">
             {maxCards === 1
@@ -365,6 +404,7 @@ export default function SpreadsScreen({
         </div>
 
         <div className="spread-interpretation">
+          {renderPositionSummary(cards)}
           <h3 className="section-subtitle">Интерпретация</h3>
           <p className={currentSpread.interpretation ? "" : "muted"}>
             {currentSpread.interpretation?.trim() ||

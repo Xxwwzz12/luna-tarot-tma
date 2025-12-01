@@ -2,7 +2,6 @@
 
 import React from "react";
 
-// Логика derive по image_url / code — сохранена
 function getCardImageSrc(card) {
   if (!card) return "/images/tarot/back.png";
 
@@ -19,28 +18,43 @@ function getCardImageSrc(card) {
 }
 
 export default function TarotCardView({ card, positionLabel }) {
-  if (!card) return null;
+  const imageSrc = getCardImageSrc(card);
+  const isReversed = !!card?.is_reversed;
+  const name = card?.name || null;
 
-  const { name, is_reversed } = card;
-  const reversed = !!is_reversed;
-  const src = getCardImageSrc(card);
+  const imgClassName =
+    "tarot-card-image" + (isReversed ? " tarot-card-image-reversed" : "");
 
   return (
-    <div className={`tarot-card-view ${reversed ? "tarot-card-view-reversed" : ""}`}>
+    <div className="tarot-card-view">
       {positionLabel && (
         <div className="tarot-card-position">
           {positionLabel}
         </div>
       )}
 
-      <div className="tarot-card-image-wrapper">
+      <div
+        className="tarot-card-image-wrapper"
+        style={{
+          position: "relative",
+          maxWidth: "200px",
+          margin: "0 auto",
+          width: "100%",
+          aspectRatio: "3 / 5",
+        }}
+      >
         <img
-          src={src}
+          src={imageSrc}
           alt={name || "Карта Таро"}
-          className={`tarot-card-image${reversed ? " tarot-card-image-reversed" : ""}`}
+          className={imgClassName}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
+          }}
         />
-
-        {reversed && (
+        {isReversed && (
           <div
             className="tarot-card-reversed-icon"
             title="Перевернутая карта"

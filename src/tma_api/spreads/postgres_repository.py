@@ -17,7 +17,7 @@ def _to_iso(value: Any) -> str:
     if hasattr(value, "isoformat"):
         try:
             return value.isoformat()
-        except Exception:  # на всякий случай
+        except Exception:
             return str(value)
     return str(value)
 
@@ -111,7 +111,6 @@ class PostgresSpreadRepository(SpreadRepository):
             "spread_type": data["spread_type"],
             "category": data.get("category"),
             "user_question": data.get("user_question"),
-            # сериализуем карты в JSON-строку; Postgres приведёт к JSONB
             "cards_json": json.dumps(data.get("cards") or [], ensure_ascii=False),
             "interpretation": data.get("interpretation"),
             "created_at": data["created_at"],
@@ -130,6 +129,10 @@ class PostgresSpreadRepository(SpreadRepository):
     def get_spread(self, spread_id: int) -> dict[str, Any] | None:
         """
         Возвращает один расклад по id или None, если не найден.
+
+        ВАЖНО: здесь фильтрация только по id.
+        Проверка принадлежности user_id делается в сервисе (SpreadService),
+        как мы обсуждали в ТЗ по интерфейсу.
         """
         sql = """
         SELECT
@@ -155,7 +158,6 @@ class PostgresSpreadRepository(SpreadRepository):
             return None
 
         cards_raw = row["cards_json"]
-        # cards_json хранится как JSONB → dict/list; на всякий случай поддерживаем строку
         if isinstance(cards_raw, str):
             try:
                 cards = json.loads(cards_raw)
@@ -184,7 +186,11 @@ class PostgresSpreadRepository(SpreadRepository):
         limit: int,
     ) -> tuple[int, list[dict[str, Any]]]:
         """
-        Возвращает (total, items) для раскладов пользователя.
+        Возвращает (total, items) для раскладов КОНКРЕТНОГО пользователя.
+
+        Тут как раз важно, что:
+        SELECT ... FROM tma_spreads
+        ДОЛЖЕН быть с WHERE user_id = :user_id.
         """
         count_sql = """
         SELECT COUNT(*) AS total
@@ -317,6 +323,10 @@ class PostgresSpreadRepository(SpreadRepository):
     def list_questions(self, spread_id: int) -> list[dict[str, Any]]:
         """
         Возвращает список уточняющих вопросов по конкретному раскладу.
+
+        Здесь фильтрация по spread_id. Проверка, что этот spread_id
+        принадлежит user_id, также должна происходить уровнем выше
+        (в сервисе), чтобы не расширять интерфейс репозитория.
         """
         sql = """
         SELECT

@@ -32,7 +32,7 @@ export default function HistoryScreen({
   onAskQuestion,        // (spreadId: number, question: string) => Promise<void>
   isAskingQuestion,
   onCloseDetail,
-  questions = [],       // ← ДОБАВЛЕНО ПО ТЗ
+  questions = [],       // массив вопросов/ответов по текущему раскладу
 }) {
   const [localQuestion, setLocalQuestion] = useState("");
 
@@ -172,9 +172,9 @@ export default function HistoryScreen({
             </button>
           </div>
 
-          {/* НОВЫЙ БЛОК: СПИСОК Q&A */}
+          {/* СПИСОК Q&A ПО РАСКЛАДУ */}
           <section className="history-detail-questions">
-            <h3 className="section-subtitle">Дополнительные вопросы</h3>
+            <h3 className="section-subtitle">Вы задали вопросы</h3>
 
             {questions.length === 0 && (
               <p className="muted">
@@ -184,17 +184,24 @@ export default function HistoryScreen({
 
             {questions.length > 0 && (
               <ul className="qa-list">
-                {questions.map((q) => (
-                  <li key={q.id} className="qa-item">
-                    <div>
-                      <b>Вопрос:</b> {q.question}
-                    </div>
-                    <div>
-                      <b>Ответ:</b>{" "}
-                      {q.answer?.trim() || "Ответ ещё не готов"}
-                    </div>
-                  </li>
-                ))}
+                {questions.map((q) => {
+                  const rawAnswer = q.answer;
+                  const hasAnswer = rawAnswer != null && String(rawAnswer).trim() !== "";
+                  const answerText = hasAnswer
+                    ? String(rawAnswer).trim()
+                    : "Ответ ещё формируется";
+
+                  return (
+                    <li key={q.id} className="qa-item">
+                      <div>
+                        <b>Вопрос:</b> {q.question}
+                      </div>
+                      <div>
+                        <b>Ответ:</b> {answerText}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

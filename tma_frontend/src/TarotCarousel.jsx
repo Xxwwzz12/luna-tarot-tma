@@ -35,7 +35,7 @@ export default function TarotCarousel({
   const cards = selectedCards || [];
   const effectiveMax = maxCards || cards.length || 1;
 
-  // --- Состояния для picker-режима (рулетка) ---
+  // --- picker state (рулетка) ---
   const [isSpinning, setIsSpinning] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
   const [isFlipped, setIsFlipped] = useState(false);
@@ -50,7 +50,7 @@ export default function TarotCarousel({
       );
     }
 
-    // ОДНА КАРТА (карта дня)
+    // 1 карта → одна большая
     if (effectiveMax === 1 || cards.length === 1) {
       const card = cards[0];
       const position = card.positionLabel || "Карта дня";
@@ -62,7 +62,7 @@ export default function TarotCarousel({
       );
     }
 
-    // НЕСКОЛЬКО КАРТ (обычно 3) — показываем сразу сеткой
+    // 3 карты → статичная сетка
     return (
       <div className="tarot-carousel tarot-carousel-multi">
         <div className="tarot-carousel-cards-grid">
@@ -88,7 +88,7 @@ export default function TarotCarousel({
   const count = pickedCount || 0;
   const isDone = count >= total;
 
-  // Все карты уже пойманы — ритуал не показываем
+  // все карты уже пойманы — не показываем ритуал
   if (isDone) {
     return null;
   }
@@ -102,22 +102,22 @@ export default function TarotCarousel({
     if (isLocked) return;
     if (!onPick) return;
 
+    // останавливаем вращение, запускаем flip
     setIsLocked(true);
     setIsSpinning(false);
     setIsFlipped(true);
 
     setTimeout(() => {
-      // Сообщаем наверх, что пользователь «поймал» одну карту
-      onPick();
+      onPick(); // сообщаем наверх: ещё одна карта поймана
+
       setIsFlipped(false);
 
-      // Если это ещё не последняя карта — продолжаем крутить
+      // если это не последняя карта — снова запускаем вращение
       if ((pickedCount || 0) + 1 < (maxCards || 1)) {
         setIsSpinning(true);
         setIsLocked(false);
       }
-      // Если это последняя — при следующем рендере isDone === true,
-      // и рулетка просто исчезнет (return null выше).
+      // если последняя — при следующем рендере isDone === true, и рулетка исчезнет
     }, 500);
   }
 
@@ -131,18 +131,32 @@ export default function TarotCarousel({
         </p>
       </div>
 
-      {/* Маленький пояс из рубашек на фоне (чисто визуальный круг) */}
-      <div className="tarot-carousel-wheel">
-        {Array.from({ length: 7 }).map((_, idx) => (
-          <div key={idx} className="tarot-card wheel-card">
+      {/* Визуальное колесо из рубашек.
+          Настоящее "вращение" можно задать в CSS:
+          .tarot-carousel-wheel.spinning { animation: wheel-spin ... } */}
+      <div
+        className={
+          "tarot-carousel-wheel" + (isSpinning ? " spinning" : "")
+        }
+      >
+        {Array.from({ length: 7 }).map((_, i) => (
+          <div key={i} className="tarot-card wheel-card">
             <div className="tarot-card-back" />
           </div>
         ))}
       </div>
 
-      {/* Центральная большая карта-рулетка */}
+      {/* Центральная карта — аккуратно по центру, с ограничением размеров */}
       <div className="tarot-card main-wrapper">
-        <div className={mainCardClassName} onClick={handlePick}>
+        <div
+          className={mainCardClassName}
+          onClick={handlePick}
+          style={{
+            maxWidth: "220px",
+            aspectRatio: "3 / 5",
+            margin: "0 auto",
+          }}
+        >
           <div className="tarot-card-back" />
         </div>
       </div>
@@ -150,8 +164,8 @@ export default function TarotCarousel({
       <button
         type="button"
         className="btn btn-primary"
-        onClick={handlePick}
         disabled={isLocked}
+        onClick={handlePick}
       >
         {total === 1
           ? "Поймать карту"

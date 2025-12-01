@@ -256,7 +256,25 @@ function App() {
           return [newItem, ...prevItems];
         });
 
+        // Подтянуть вопросы к только что созданному раскладу (и для Spreads, и для History)
         await loadQuestionsForSpread(detail.id);
+
+        try {
+          const questionsRes = await apiGet(
+            `/spreads/${detail.id}/questions`
+          );
+          if (questionsRes?.ok && questionsRes.data) {
+            setQuestionsBySpread((prev) => ({
+              ...prev,
+              [detail.id]: questionsRes.data,
+            }));
+          }
+        } catch (e) {
+          console.warn(
+            "[TMA] Failed to prefetch questions for new spread",
+            e
+          );
+        }
 
         setQuestion("");
         setSelectedCards([]);
@@ -291,7 +309,7 @@ function App() {
 
     if (res?.ok && res.data) {
       console.log("[TMA] New profile from API:", res.data);
-      setProfile(res.data);
+      setProfile(res.data); // <-- после POST используем именно обновлённый профиль с бэка
     }
   }
 
@@ -316,7 +334,7 @@ function App() {
         console.warn("[TMA] Failed to load spread detail", res);
       }
 
-      // 🆕 Дополнительно подгружаем вопросы по этому раскладу
+      // Подгружаем вопросы по этому раскладу
       console.log("[TMA] API GET /spreads/%s/questions", id);
       const questionsRes = await apiGet(`/spreads/${id}/questions`);
       if (questionsRes?.ok && questionsRes.data) {
@@ -350,21 +368,25 @@ function App() {
       );
 
       if (res?.ok && res.data) {
-        // Обновляем компактное состояние Q&A (для SpreadsScreen)
+        // Обновляем компактное состояние Q&A (для SpreadsScreen, если нужно)
         setQaState({
           question: questionText,
           isAsking: false,
           answer: res.data,
         });
 
-        // 🆕 Обновляем список вопросов по этому раскладу
-        setQuestionsBySpread((prev) => ({
-          ...prev,
-          [effectiveSpreadId]: [
-            ...(prev[effectiveSpreadId] || []),
-            res.data,
-          ],
-        }));
+        // Обновляем список вопросов по этому раскладу
+        setQuestionsBySpread((prev) => {
+          const prevList = prev[effectiveSpreadId] || [];
+          const nextList = Array.isArray(res.data)
+            ? res.data
+            : [...prevList, res.data];
+
+          return {
+            ...prev,
+            [effectiveSpreadId]: nextList,
+          };
+        });
 
         console.log("[TMA] Question created for spread:", res.data);
       } else {
@@ -421,7 +443,18 @@ function App() {
             formatDate={formatDate}
           />
         );
-      case "history":
+      case "history": {
+        // Всегда стараемся отдать HistoryScreen список вопросов:
+        // 1) сначала смотрим в questionsBySpread[historyDetail.id]
+        // 2) если там пусто – пробуем historyDetail.questions (если бэк так хранит)
+        const historyQuestions =
+          historyDetail && historyDetail.id
+            ? questionsBySpread[historyDetail.id] ??
+              (Array.isArray(historyDetail.questions)
+                ? historyDetail.questions
+                : [])
+            : [];
+
         return (
           <HistoryScreen
             spreads={spreads}
@@ -432,14 +465,10 @@ function App() {
             onAskQuestion={handleAskQuestion}
             isAskingQuestion={isAskingQuestion}
             onCloseDetail={() => setHistoryDetail(null)}
-            // 🆕 список вопросов для выбранного расклада
-            questions={
-              historyDetail
-                ? questionsBySpread[historyDetail.id] || []
-                : []
-            }
+            questions={historyQuestions}
           />
         );
+      }
       case "profile":
         return (
           <ProfileScreen
