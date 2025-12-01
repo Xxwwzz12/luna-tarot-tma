@@ -341,7 +341,7 @@ button:disabled {
 }
 
 /* =========================================================
-   КАРУСЕЛЬ ТАРО (центрирование + веер + flip + spin)
+   КАРУСЕЛЬ ТАРО / КАРТЫ
    ========================================================= */
 .page-spreads {
   display: flex;
@@ -371,7 +371,7 @@ button:disabled {
   margin-top: 12px;
 }
 
-/* Стопка карт */
+/* Стопка карт / "рулетка" */
 .tarot-stack {
   position: relative;
   height: 220px;
@@ -422,11 +422,27 @@ button:disabled {
   height: auto;
 }
 
-/* Изображение карты (общий класс) */
+/* Обёртка под центральную карту (для рулетки / основного вида) */
+.tarot-card-image-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0 auto;
+}
+
+/* Адаптивный размер центральной карты и основной карты в стеке */
+.tarot-card-image-wrapper,
+.tarot-card.main {
+  width: min(60vw, 260px);
+  height: min(80vw, 380px);
+  margin: 0 auto;
+}
+
+/* Изображение карты */
 .tarot-card-image {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   object-fit: contain;
   border-radius: 12px;
   backface-visibility: hidden;
@@ -438,7 +454,7 @@ button:disabled {
   transition: transform 0.3s ease;
 }
 
-/* Основная карта */
+/* Основная карта в стеке / карусели */
 .tarot-card.main {
   position: relative;
   z-index: 3;
@@ -447,28 +463,53 @@ button:disabled {
   backface-visibility: hidden;
 }
 
+/* Во время перетаскивания */
 .tarot-card.main.dragging {
   cursor: grabbing;
 }
 
-/* Flip */
-.tarot-card.main.flipping .tarot-card-back {
-  transform: rotateY(180deg);
-  opacity: 0.9;
-  transition: transform 0.6s ease, opacity 0.6s ease;
-}
-
-/* Spin */
+/* Спин — подчёркивание вращения */
 .tarot-card.main.spinning {
   transition: transform 0.12s ease-out;
+  animation: tarot-spin 0.3s linear infinite;
 }
 
-/* Рубашка карты */
-.tarot-card-back {
-  font-size: 2rem;
+/* Флип — в момент "поймал" */
+.tarot-card.main.flipping {
+  transition: transform 0.6s ease, opacity 0.6s ease;
+  transform: rotateY(180deg);
   opacity: 0.9;
+}
+
+/* Рубашка */
+.tarot-card-back {
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  background-image: url("/images/tarot/back.svg");
+  background-size: cover;
+  background-position: center;
   transition: transform 0.3s ease, opacity 0.3s ease;
   backface-visibility: hidden;
+}
+
+/* Анимация спина ("рулетка") */
+@keyframes tarot-spin {
+  0% {
+    transform: translateX(0) rotate(0deg);
+  }
+  25% {
+    transform: translateX(-4px) rotate(-2deg);
+  }
+  50% {
+    transform: translateX(4px) rotate(2deg);
+  }
+  75% {
+    transform: translateX(-2px) rotate(-1deg);
+  }
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
 }
 
 /* Призрачные карты */
@@ -500,6 +541,20 @@ button:disabled {
 
 .carousel-controls .btn-primary {
   flex: 1;
+}
+
+/* 3 карты в ряд — компактный грид */
+.tarot-carousel-cards-grid {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.tarot-card-view {
+  flex: 1 1 100px;
+  max-width: 180px;
 }
 
 /* =========================================================
