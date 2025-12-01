@@ -8,12 +8,15 @@ from datetime import datetime, date
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from fastapi import HTTPException  # для ошибок режима/карт
+
 from .models import (
     CardModel,
     SpreadDetail,
     SpreadListItem,
     SpreadQuestionModel,
     SpreadQuestionsList,
+    SpreadCreateIn,
 )
 from .repository import (
     SpreadRepository,
@@ -21,7 +24,7 @@ from .repository import (
     SQLiteSpreadRepository,
 )
 from .postgres_repository import PostgresSpreadRepository
-from ..tarot_deck import draw_random_cards
+from ..tarot_deck import draw_random_cards, get_card_by_code
 
 logger = logging.getLogger(__name__)
 
@@ -285,6 +288,32 @@ class SpreadService:
         logger.info("SpreadService: using InMemorySpreadRepository")
         self._repo = InMemorySpreadRepository()
 
+    # Главный entrypoint для TMA: ветка auto/interactive
+    async def create_spread(
+        self,
+        user_id: int,
+        body: SpreadCreateIn,
+    ) -> SpreadDetail:
+        """
+        Высокоуровневый метод для POST /spreads.
+
+        Здесь мы разбираем режим:
+        - mode == "auto"        → авто-расклад (колоду тянет бэкенд);
+        - mode == "interactive" → интерактивный расклад по выбранным фронтом кодам карт;
+        - иначе                → 400 Unknown spread mode.
+        """
+        if body.mode == "auto":
+            return await self.create_auto_spread(
+                user_id=user_id,
+                spread_type=body.spread_type,
+                category=body.category,
+                question=body.question,
+            )
+        elif body.mode == "interactive":
+            return await self._create_interactive_spread(user_id, body)
+        else:
+            raise HTTPException(status_code=400, detail="Unknown spread mode")
+
     # _build_cards: сервер сам выбирает карты из своей колоды.
     def _build_cards(self, spread_type: str) -> List[Dict[str, Any]]:
         """
@@ -337,17 +366,7 @@ class SpreadService:
         """
         user_ctx = _get_user_ctx(user_id)
 
-        # 🔒 Жёсткая нормализация "карты дня"
-        #
-        # Эквивалент ТЗ:
-        # if body.spread_type == "one":
-        #     category = "daily"
-        #     question = None
-        # else:
-        #     category = body.category
-        #     question = body.question
-        #
-        # Здесь spread_type/category/question — уже "распакованные" поля тела запроса.
+        # Жёсткая нормализация "карты дня"
         if spread_type == "one":
             normalized_category: Optional[str] = "daily"
             user_question: Optional[str] = None
@@ -387,13 +406,11 @@ class SpreadService:
         interpretation = interpretation.strip()
 
         created_at = _now_iso()
-        # Здесь уже работаем только с нормализованной категорией
         effective_category = normalized_category or "general"
 
         # Структура записи для репозитория:
         # cards — ПОЛНЫЕ словари карт, сохраняем без обрезки.
         record: Dict[str, Any] = {
-            # id задаст репозиторий
             "user_id": user_id,
             "spread_type": spread_type,
             "category": effective_category,   # daily/general
@@ -401,6 +418,7 @@ class SpreadService:
             "cards": cards_payload,           # полные карточки
             "interpretation": interpretation,
             "created_at": created_at,
+            "mode": "auto",
         }
 
         # Сохраняем через репозиторий и получаем id
@@ -409,7 +427,7 @@ class SpreadService:
 
         # DEV-лог для дебага истории
         logger.info(
-            "Created spread: user_id=%s spread_id=%s spread_type=%s category=%s created_at=%s",
+            "Created AUTO spread: user_id=%s spread_id=%s spread_type=%s category=%s created_at=%s",
             user_id,
             spread_id,
             spread_type,
@@ -423,6 +441,118 @@ class SpreadService:
         return SpreadDetail(
             id=spread_id,
             spread_type=spread_type,
+            category=effective_category,
+            created_at=created_at,
+            cards=cards_models,
+            interpretation=interpretation,
+            question=user_question,
+        )
+
+    # INTERACTIVE-расклад по выбранным фронтом картам
+    async def _create_interactive_spread(
+        self,
+        user_id: int,
+        body: SpreadCreateIn,
+    ) -> SpreadDetail:
+        """
+        Интерактивный расклад:
+        - карты выбирает фронт (по code), мы лишь проверяем и тянем их из tarot_deck;
+        - логика категоризации/вопроса такая же, как в авто-режиме:
+          one → daily/None, остальные — category/question из body;
+        - дальше — та же схема, что и для авто: AI → fallback → сохранение → SpreadDetail.
+        """
+        user_ctx = _get_user_ctx(user_id)
+
+        codes = body.cards or []
+        needed = 1 if body.spread_type == "one" else 3
+        if len(codes) != needed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Interactive spread requires exactly {needed} cards, got {len(codes)}",
+            )
+
+        # Жёсткая нормализация "карты дня"
+        if body.spread_type == "one":
+            normalized_category: Optional[str] = "daily"
+            user_question: Optional[str] = None
+        else:
+            normalized_category = body.category
+            user_question = body.question
+
+        # Собираем карточки по code из колоды
+        cards_payload: List[Dict[str, Any]] = []
+        for code in codes:
+            card_data = get_card_by_code(code)
+            if not card_data:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown card code: {code}",
+                )
+
+            # Приводим к формату, совместимому с CardModel и авто-веткой
+            card_dict: Dict[str, Any] = {
+                "id": card_data.get("id"),
+                "code": card_data.get("code"),
+                "name": card_data.get("name"),
+                "suit": card_data.get("suit"),
+                "arcana": card_data.get("type"),  # major/minor
+                "image_url": card_data.get("image_url"),
+                # Для интерактива пока не даём перевёрнутость, можно позже добавить в UI
+                "is_reversed": False,
+            }
+            cards_payload.append(card_dict)
+
+        # Пытаемся получить интерпретацию через AI
+        try:
+            interpretation = await _generate_ai_interpretation(
+                spread_type=body.spread_type,
+                category=normalized_category,
+                cards_payload=cards_payload,
+                question=user_question,
+                user_ctx=user_ctx,
+            )
+        except Exception:
+            interpretation = None
+
+        if not interpretation or not interpretation.strip():
+            interpretation = _generate_basic_interpretation(
+                spread_type=body.spread_type,
+                category=normalized_category,
+                user_question=user_question,
+            )
+        interpretation = interpretation.strip()
+
+        created_at = _now_iso()
+        effective_category = normalized_category or "general"
+
+        record: Dict[str, Any] = {
+            "user_id": user_id,
+            "spread_type": body.spread_type,
+            "category": effective_category,
+            "user_question": user_question,
+            "cards": cards_payload,
+            "interpretation": interpretation,
+            "created_at": created_at,
+            "mode": "interactive",
+        }
+
+        spread_id = self._repo.save_spread(record)
+        record["id"] = spread_id
+
+        logger.info(
+            "Created INTERACTIVE spread: user_id=%s spread_id=%s spread_type=%s category=%s created_at=%s",
+            user_id,
+            spread_id,
+            body.spread_type,
+            effective_category,
+            created_at,
+        )
+
+        cards_models = [CardModel(**c) for c in cards_payload]
+
+        return SpreadDetail(
+            id=spread_id,
+            spread_type=body.spread_type,
             category=effective_category,
             created_at=created_at,
             cards=cards_models,

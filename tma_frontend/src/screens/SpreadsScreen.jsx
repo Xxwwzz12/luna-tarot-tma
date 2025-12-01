@@ -1,7 +1,9 @@
 // tma_frontend/src/screens/SpreadsScreen.jsx
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import TarotCarousel from "../TarotCarousel";
+import TarotCardView from "../components/TarotCardView";
+import { FULL_TAROT_DECK } from "../data/tarotDeck";
 
 function getSpreadTitle(spreadType) {
   if (spreadType === "one") return "Карта дня";
@@ -29,16 +31,21 @@ export default function SpreadsScreen({
   const [category, setCategory] = useState("general");
   const [customQuestion, setCustomQuestion] = useState("");
   const [useCustomQuestion, setUseCustomQuestion] = useState(false);
-  const [pickedCount, setPickedCount] = useState(0);
+  const [pickedCards, setPickedCards] = useState([]); // Card[]
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
   const maxCards = spreadType === "one" ? 1 : 3;
+  const pickedCount = pickedCards.length;
+
+  // Сброс выбранных карт при смене типа расклада
+  useEffect(() => {
+    setPickedCards([]);
+  }, [spreadType]);
 
   const handleChangeSpreadType = (nextType) => {
     setSpreadType(nextType);
     setError(null);
-    setPickedCount(0);
 
     if (nextType === "one") {
       // Для карты дня ничего не спрашиваем
@@ -81,13 +88,17 @@ export default function SpreadsScreen({
     }
   };
 
+  // Теперь payload всегда "interactive" и содержит выбранные карты
   const buildPayload = () => {
+    const cardsCodes = pickedCards.map((c) => c.code);
+
     if (spreadType === "one") {
       return {
-        mode: "auto",
+        mode: "interactive",
         spread_type: "one",
-        category: "daily",
-        question: null,
+        category: null,              // бэк сам поставит "daily"
+        question: null,              // вопрос не используется
+        cards: cardsCodes,
       };
     }
 
@@ -96,10 +107,11 @@ export default function SpreadsScreen({
 
     if (useCustomQuestion) {
       return {
-        mode: "auto",
+        mode: "interactive",
         spread_type: "three",
-        category: null,
+        category: null,             // при своём вопросе категорию не отправляем
         question: trimmedQuestion,
+        cards: cardsCodes,
       };
     }
 
@@ -107,10 +119,11 @@ export default function SpreadsScreen({
     const effectiveCategory = category || "general";
 
     return {
-      mode: "auto",
+      mode: "interactive",
       spread_type: "three",
       category: effectiveCategory,
       question: null,
+      cards: cardsCodes,
     };
   };
 
@@ -132,7 +145,7 @@ export default function SpreadsScreen({
       }
     }
 
-    if (pickedCount < maxCards) {
+    if (pickedCards.length < maxCards) {
       setError("Сначала выберите все карты, а потом сделайте расклад.");
       return;
     }
@@ -161,7 +174,7 @@ export default function SpreadsScreen({
     setCategory("daily");
     setCustomQuestion("");
     setUseCustomQuestion(false);
-    setPickedCount(0);
+    setPickedCards([]);
   };
 
   const renderPositionSummary = (cards) => {
@@ -326,10 +339,18 @@ export default function SpreadsScreen({
 
           <TarotCarousel
             mode="picker"
+            deck={FULL_TAROT_DECK}
             pickedCount={pickedCount}
             maxCards={maxCards}
             onPick={() => {
-              setPickedCount((prev) => Math.min(prev + 1, maxCards));
+              // оставлено для совместимости, логика выбора в onPickCard
+            }}
+            onPickCard={(card) => {
+              setPickedCards((prev) => {
+                if (prev.length >= maxCards) return prev;
+                if (prev.some((c) => c.code === card.code)) return prev;
+                return [...prev, card];
+              });
               setError(null);
             }}
           />
@@ -341,6 +362,22 @@ export default function SpreadsScreen({
             {pickedCount >= maxCards &&
               " Карты выбраны, можно делать расклад."}
           </p>
+
+          {pickedCards.length > 0 && (
+            <div className="picked-cards-preview">
+              {pickedCards.map((card, idx) => (
+                <TarotCardView
+                  key={card.code + "-" + idx}
+                  card={card}
+                  positionLabel={
+                    maxCards === 1
+                      ? "Карта дня"
+                      : POSITION_LABELS[idx] || `Карта ${idx + 1}`
+                  }
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="card">
@@ -349,7 +386,7 @@ export default function SpreadsScreen({
               type="button"
               className="btn btn-primary"
               onClick={handleSubmit}
-              disabled={isSubmitting || pickedCount < maxCards}
+              disabled={isSubmitting || pickedCards.length < maxCards}
             >
               {isSubmitting
                 ? "Ответ в процессе, ожидайте…"

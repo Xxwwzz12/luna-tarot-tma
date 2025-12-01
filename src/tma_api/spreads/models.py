@@ -51,20 +51,31 @@ class SpreadCreateIn(BaseModel):
 
     Правила:
 
+    • mode="interactive":
+        - фронт обязан передать cards: список кодов выбранных карт (1 или 3)
+        - spread_type="one" → category / question игнорируются (жёстко "Карта дня")
+
+    • mode="auto":
+        - cards игнорируется (карты выбирает backend случайно)
+
     • spread_type="one":
         - category -> backend сам подставляет "daily" (если не пришла)
-        - question игнорируется (должно быть None)
+        - question должен быть None
 
     • spread_type="three":
-        - category — готовая тема ДЛЯ авто-расклада
-        - question — свой вопрос пользователя ДО расклада (вместо категории)
-        - одновременно присылать category и question НЕЛЬЗЯ
+        - либо category (готовая тема)
+        - либо question (свой вопрос ДО расклада)
+        - category и question вместе передавать нельзя
     """
 
     mode: Literal["auto", "interactive"]
     spread_type: Literal["one", "three"]
-    category: str | None = None       # категория для 3-картного авто-расклада
-    question: str | None = None       # вопрос ВМЕСТО категории (только для 3-карт)
+
+    category: str | None = None              # категория для 3-картного авто-расклада
+    question: str | None = None              # вопрос ВМЕСТО категории (3-карты)
+
+    cards: list[str] | None = None           # НОВОЕ: список кодов выбранных карт (interactive)
+                                             # типичные коды: ["maj_00", "cups_10", "wands_05"]
 
 
 # 3. Интерактивный режим
