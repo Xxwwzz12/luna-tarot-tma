@@ -94,30 +94,38 @@ function TarotCarouselPicker({
     return null;
   }
 
-  const deckArray =
-    Array.isArray(deck) && deck.length > 0 ? deck : null;
+  // 🔧 Нормализация deck:
+  // - если массив → берём как есть;
+  // - если объект { "0": {...}, "1": {...} } → Object.values(...);
+  // - иначе → null.
+  let deckArray = null;
+
+  if (Array.isArray(deck)) {
+    deckArray = deck.length > 0 ? deck : null;
+  } else if (deck && typeof deck === "object") {
+    const vals = Object.values(deck).filter(Boolean);
+    deckArray = vals.length > 0 ? vals : null;
+  }
 
   // Лента реальных карт (или 78 заглушек, если deck нет)
   const cardsArray =
     deckArray && deckArray.length > 0
       ? deckArray
       : Array.from({ length: TOTAL_CARDS }, () => null);
+
   const cardsCount = cardsArray.length;
 
-  // Индекс текущей "главной" карты в ленте
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isSpinning, setIsSpinning] = useState(true);
 
-  // Реф и шаг для реального скролла
   const wheelRef = useRef(null);
   const [cardStep, setCardStep] = useState(64); // запасной дефолт
 
-  // После первого рендера измеряем ширину слота (карта + gap)
+  // измеряем ширину слота (карта + gap)
   useEffect(() => {
     if (!wheelRef.current) return;
     const firstCard = wheelRef.current.querySelector(".wheel-card");
     if (firstCard) {
-      // ширина + примерно 8px gap (как в CSS)
       setCardStep(firstCard.offsetWidth + 8);
     }
   }, []);
@@ -129,7 +137,6 @@ function TarotCarouselPicker({
     const id = window.setInterval(() => {
       setCurrentIndex((prev) => {
         const next = prev + 1;
-        // жёсткое зацикливание по длине колоды
         return (next % cardsCount + cardsCount) % cardsCount;
       });
     }, 80);
@@ -140,7 +147,6 @@ function TarotCarouselPicker({
   // Привязка currentIndex к реальному scrollLeft
   useEffect(() => {
     if (!wheelRef.current) return;
-
     const targetLeft = currentIndex * cardStep;
 
     wheelRef.current.scrollTo({
@@ -150,7 +156,6 @@ function TarotCarouselPicker({
   }, [currentIndex, cardStep]);
 
   const handlePick = useCallback(() => {
-    // 🔍 Временный лог для проверки, вызывается ли вообще handlePick
     console.log("[Carousel] handlePick fired", {
       currentIndex,
       cardsCount,
@@ -158,14 +163,14 @@ function TarotCarouselPicker({
       deckLength: deckArray ? deckArray.length : null,
     });
 
-    // 1) сразу останавливаем спин
+    // 1) стоп спина
     setIsSpinning(false);
 
-    // 2) безопасный индекс в пределах колоды
+    // 2) безопасный индекс
     const safeIndex =
       (currentIndex % cardsCount + cardsCount) % cardsCount;
 
-    // 3) карта из deck, если она есть
+    // 3) реальная карта из deck (если есть)
     if (deckArray && deckArray.length > 0) {
       const selectedCard = deckArray[safeIndex];
       if (selectedCard && typeof onPickCard === "function") {
@@ -173,7 +178,7 @@ function TarotCarouselPicker({
       }
     }
 
-    // 4) старый контракт — сигнал наверх
+    // 4) старый контракт наверх
     if (typeof onPick === "function") {
       onPick();
     }
@@ -189,7 +194,6 @@ function TarotCarouselPicker({
         </p>
       </div>
 
-      {/* Обёртка для горизонтального барабана */}
       <div className="tarot-carousel-wheel-container">
         <div className="tarot-carousel-wheel" ref={wheelRef}>
           {cardsArray.map((card, index) => {
@@ -215,7 +219,6 @@ function TarotCarouselPicker({
                   }
                   onClick={isMain ? handlePick : undefined}
                 >
-                  {/* Debug-метка, чтобы точно видеть, какая карта считается «главной» */}
                   {isMain && (
                     <span
                       className="debug-dot"
