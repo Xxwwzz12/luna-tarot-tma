@@ -150,6 +150,14 @@ function TarotCarouselPicker({
   }, [currentIndex, cardStep]);
 
   const handlePick = useCallback(() => {
+    // 🔍 Временный лог для проверки, вызывается ли вообще handlePick
+    console.log("[Carousel] handlePick fired", {
+      currentIndex,
+      cardsCount,
+      hasDeck: !!deckArray,
+      deckLength: deckArray ? deckArray.length : null,
+    });
+
     // 1) сразу останавливаем спин
     setIsSpinning(false);
 
@@ -207,6 +215,21 @@ function TarotCarouselPicker({
                   }
                   onClick={isMain ? handlePick : undefined}
                 >
+                  {/* Debug-метка, чтобы точно видеть, какая карта считается «главной» */}
+                  {isMain && (
+                    <span
+                      className="debug-dot"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        fontSize: 10,
+                      }}
+                    >
+                      ●
+                    </span>
+                  )}
+
                   {hasFace ? (
                     <img
                       src={imgSrc}

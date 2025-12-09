@@ -22,6 +22,28 @@ const THREE_SPREAD_CATEGORIES = [
 
 const POSITION_LABELS = ["Прошлое", "Настоящее", "Будущее"];
 
+// Лёгкий dev-логгер с цветами
+const IS_DEV =
+  typeof import.meta !== "undefined" &&
+  import.meta.env &&
+  import.meta.env.DEV;
+
+function spreadsLog(level, label, payload) {
+  if (!IS_DEV) return;
+
+  const prefix = "%c[TMA:Spreads]%c " + label;
+  const styleMain = "color:#8b5cf6;font-weight:bold;";
+  const styleLabel = "color:#e5e7eb;";
+
+  // level: "log" | "warn" | "error"
+  const fn = console[level] || console.log;
+  if (payload !== undefined) {
+    fn(prefix, styleMain, styleLabel, payload);
+  } else {
+    fn(prefix, styleMain, styleLabel);
+  }
+}
+
 export default function SpreadsScreen({
   currentSpread,
   onCreateSpread,       // (payload) => Promise<void>
@@ -40,10 +62,14 @@ export default function SpreadsScreen({
 
   // Сброс выбранных карт при смене типа расклада
   useEffect(() => {
+    spreadsLog("log", "spreadType changed, reset pickedCards", {
+      spreadType,
+    });
     setPickedCards([]);
   }, [spreadType]);
 
   const handleChangeSpreadType = (nextType) => {
+    spreadsLog("log", "handleChangeSpreadType", { nextType });
     setSpreadType(nextType);
     setError(null);
 
@@ -61,7 +87,13 @@ export default function SpreadsScreen({
   };
 
   const handleCategoryChange = (nextCat) => {
-    if (useCustomQuestion) return; // при своём вопросе категории неактивны
+    if (useCustomQuestion) {
+      spreadsLog("warn", "handleCategoryChange ignored (useCustomQuestion=true)", {
+        nextCat,
+      });
+      return;
+    }
+    spreadsLog("log", "handleCategoryChange", { nextCat });
     setCategory(nextCat);
     setCustomQuestion("");
     setError(null);
@@ -69,12 +101,21 @@ export default function SpreadsScreen({
 
   const handleCustomQuestionChange = (e) => {
     const value = e.target.value;
+    spreadsLog("log", "handleCustomQuestionChange", {
+      value,
+      length: value.length,
+    });
     setCustomQuestion(value);
     setError(null);
   };
 
   const toggleUseCustomQuestion = () => {
     const next = !useCustomQuestion;
+    spreadsLog("log", "toggleUseCustomQuestion", {
+      prev: useCustomQuestion,
+      next,
+    });
+
     setUseCustomQuestion(next);
     setError(null);
 
@@ -93,60 +134,88 @@ export default function SpreadsScreen({
     const cardsCodes = pickedCards.map((c) => c.code);
 
     if (spreadType === "one") {
-      return {
+      const payload = {
         mode: "interactive",
         spread_type: "one",
         category: null, // бэк сам поставит "daily"
         question: null,
         cards: cardsCodes,
       };
+      spreadsLog("log", "buildPayload (one)", payload);
+      return payload;
     }
 
     // three-карточный расклад
     const trimmedQuestion = customQuestion.trim();
 
     if (useCustomQuestion) {
-      return {
+      const payload = {
         mode: "interactive",
         spread_type: "three",
         category: null, // при своём вопросе категорию не отправляем
         question: trimmedQuestion,
         cards: cardsCodes,
       };
+      spreadsLog("log", "buildPayload (three, customQuestion)", payload);
+      return payload;
     }
 
     // без собственного вопроса — используем категорию
     const effectiveCategory = category || "general";
 
-    return {
+    const payload = {
       mode: "interactive",
       spread_type: "three",
       category: effectiveCategory,
       question: null,
       cards: cardsCodes,
     };
+    spreadsLog("log", "buildPayload (three, category)", payload);
+    return payload;
   };
 
   const handleSubmit = async () => {
-    if (!onCreateSpread || isSubmitting) return;
+    if (!onCreateSpread || isSubmitting) {
+      spreadsLog("warn", "handleSubmit skipped", {
+        hasHandler: !!onCreateSpread,
+        isSubmitting,
+      });
+      return;
+    }
 
     // Валидация перед отправкой
     if (spreadType === "three") {
       if (useCustomQuestion) {
         if (!customQuestion.trim()) {
-          setError("Пожалуйста, сформулируйте ваш вопрос.");
+          const msg = "Пожалуйста, сформулируйте ваш вопрос.";
+          spreadsLog("warn", "validation failed (empty customQuestion)", {
+            spreadType,
+            useCustomQuestion,
+          });
+          setError(msg);
           return;
         }
       } else {
         if (!category) {
-          setError("Пожалуйста, выберите категорию расклада.");
+          const msg = "Пожалуйста, выберите категорию расклада.";
+          spreadsLog("warn", "validation failed (no category)", {
+            spreadType,
+            useCustomQuestion,
+          });
+          setError(msg);
           return;
         }
       }
     }
 
     if (pickedCards.length < maxCards) {
-      setError("Сначала выберите все карты, а потом сделайте расклад.");
+      const msg =
+        "Сначала выберите все карты, а потом сделайте расклад.";
+      spreadsLog("warn", "validation failed (not enough pickedCards)", {
+        pickedLen: pickedCards.length,
+        maxCards,
+      });
+      setError(msg);
       return;
     }
 
@@ -155,8 +224,14 @@ export default function SpreadsScreen({
       setError(null);
 
       const payload = buildPayload();
+      spreadsLog("log", "handleSubmit → onCreateSpread", payload);
       await onCreateSpread(payload);
+      spreadsLog("log", "handleSubmit success", {});
     } catch (e) {
+      spreadsLog("error", "handleSubmit error", {
+        message: e?.message,
+        error: e,
+      });
       console.error("[SpreadsScreen] create spread error", e);
       setError("Не удалось сделать расклад. Попробуйте ещё раз.");
     } finally {
@@ -168,12 +243,22 @@ export default function SpreadsScreen({
   // используем pickedCards.length + 1, чтобы корректно работать
   // независимо от порядка вызова onPickCard/onPick внутри TarotCarousel
   const handlePick = () => {
+    spreadsLog("log", "onPick fired", {
+      pickedLen: pickedCards.length,
+      maxCards,
+      isSubmitting,
+    });
+
     if (pickedCards.length + 1 >= maxCards && !isSubmitting) {
+      spreadsLog("log", "onPick → handleSubmit()", {
+        willSubmit: true,
+      });
       void handleSubmit();
     }
   };
 
   const handleNewSpread = () => {
+    spreadsLog("log", "handleNewSpread", {});
     onResetCurrentSpread?.();
     setError(null);
     setIsSubmitting(false);
@@ -353,6 +438,11 @@ export default function SpreadsScreen({
             maxCards={maxCards}
             onPick={handlePick}
             onPickCard={(card) => {
+              spreadsLog("log", "onPickCard got card", {
+                code: card?.code,
+                name: card?.name,
+                prevLen: pickedCards.length,
+              });
               setPickedCards((prev) => [...prev, card]);
               setError(null);
             }}
