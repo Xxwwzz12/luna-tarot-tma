@@ -1,105 +1,88 @@
-Погоди, перед тем как переходить к правкам
+Что было исправлено
 
-Смотри как должны работать расклады, если выбереаешь расклад на одну карту, то категори подставвляется и передается ИИ автоматически: карта дня" промт расскажи что значит в разрезе карты дня текуща карта для пользователя и передается данные пользователя и выбранная карта. На карту дня также должна быть карусель с выьором одной карты. Размера картинки карты должен подгоняться под размер устройства.
+Вернули совместимость с текущим CSS главной карты
 
-После того как карты выбраны и интерпритация пришла, кстати на время пока ответ генерируется ии должна бытьк какая-то заглушка в духе " ответ в процесссе, ожидайте" и нельзя ничего сделать пока ответ не придет. ДАлеее ответ приходит, все не нужно связанное с выбором долдно исчезать, должно отсаваться только выбранная/ые для трех карт карты описание картЮ картинкаи карт и результат интерпритации. должна выходить кнопка "задать вопрос по раскалду"
-Для трех карт почти таже самая механика, но главное это то что должно быть жесткое разделение, либо категория из выбора либо свой вопрос, при выьоре этой  категори, т.е. ты сначал выбираешь свой вопрос и потом тебье окно с вопросом, автоматом его не надо выводить. Также для всех расклажов - возможность задавть вопрос по результатам. Давай сейчас подгоним все под гужную реализацию
+Центральной карте снова даётся класс main:
 
-На текщуий момент вот что в консоли брузера:
-[Telegram.WebView] > postEvent web_app_set_header_color {color_key: 'bg_color'}
-telegram-web-app.js:135 [Telegram.WebView] > postEvent web_app_set_bottom_bar_color {color: '#ffffff'}
-telegram-web-app.js:135 [Telegram.WebView] > postEvent web_app_request_theme 
-telegram-web-app.js:135 [Telegram.WebView] > postEvent web_app_request_viewport 
-telegram-web-app.js:135 [Telegram.WebView] > postEvent web_app_request_safe_area 
-telegram-web-app.js:135 [Telegram.WebView] > postEvent web_app_request_content_safe_area 
-index-DIKRq-qW.js:9 [TMA] API_BASE_URL: https://luna-tarot-tma.onrender.com
-index-DIKRq-qW.js:9 InitData in window.__tma: null
-index-DIKRq-qW.js:9 [TMA] API_BASE_URL: https://luna-tarot-tma.onrender.com
-index-DIKRq-qW.js:9 [TMA] API GET /profile
-index-DIKRq-qW.js:9 [TMA] API GET /profile 
-index-DIKRq-qW.js:9 [TMA] API GET /spreads?page=1&limit=10
-index-DIKRq-qW.js:9 [TMA] API GET /spreads?page=1&limit=10 
-index-DIKRq-qW.js:9 [TMA] Raw profile from API: {user_id: 123, username: 'dev_user', first_name: 'Dev', last_name: 'User', birth_date: null, …}
-index-DIKRq-qW.js:9 [TMA] Profile loaded: {user_id: 123, username: 'dev_user'}
-index-DIKRq-qW.js:9 [TMA] Spreads list loaded: 10 items
-index-DIKRq-qW.js:9 [TMA] Updating profile with payload: {first_name: 'Егор', last_name: 'Гуревич', birth_date: '1996-04-24', gender: 'male'}
-index-DIKRq-qW.js:9 [TMA] API POST /profile {first_name: 'Егор', last_name: 'Гуревич', birth_date: '1996-04-24', gender: 'male'}
-index-DIKRq-qW.js:9 [TMA] Profile updated: {ok: true, data: {…}, error: null}
-index-DIKRq-qW.js:9 [TMA] New profile from API: {user_id: 123, username: 'dev_user', first_name: 'Dev', last_name: 'User', birth_date: '1996-04-24', …}
-index-DIKRq-qW.js:9 [TMA] API POST /spreads {mode: 'auto', spread_type: 'one', category: 'daily', question: null}
-index-DIKRq-qW.js:9 [TMA] API POST /spreads {mode: 'auto', spread_type: 'one', category: 'daily', question: null}
-index-DIKRq-qW.js:9 [TMA] New spread detail: {id: 16, spread_type: 'one', category: 'daily', question: null, cards: Array(1), …}
-index-DIKRq-qW.js:9 [TMA] API GET /spreads/16/questions 
+className={
+  "tarot-card" + (isMain ? " main" : "")
+}
 
-Вот что в логаз бэкенда
-2025-11-30T17:38:28.827545697Z Using cached uvloop-0.22.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (3.8 MB)
-2025-11-30T17:38:28.836112663Z Using cached watchfiles-1.1.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (456 kB)
-2025-11-30T17:38:28.838603252Z Using cached websockets-15.0.1-cp311-cp311-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (182 kB)
-2025-11-30T17:38:28.840610804Z Using cached yarl-1.22.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (365 kB)
-2025-11-30T17:38:28.84287106Z Using cached iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
-2025-11-30T17:38:28.844584907Z Using cached packaging-25.0-py3-none-any.whl (66 kB)
-2025-11-30T17:38:28.846424746Z Using cached sniffio-1.3.1-py3-none-any.whl (10 kB)
-2025-11-30T17:38:28.848143263Z Using cached annotated_types-0.7.0-py3-none-any.whl (13 kB)
-2025-11-30T17:38:28.849816159Z Using cached typing_inspection-0.4.2-py3-none-any.whl (14 kB)
-2025-11-30T17:38:29.109033839Z Installing collected packages: json5, websockets, uvloop, urllib3, typing-extensions, tqdm, sniffio, six, pyyaml, python-dotenv, psycopg-binary, propcache, pluggy, packaging, multidict, jiter, iniconfig, idna, httptools, h11, frozenlist, distro, click, charset-normalizer, certifi, attrs, annotated-types, aiohappyeyeballs, yarl, uvicorn, typing-inspection, requests, python-dateutil, pytest, pydantic-core, psycopg, httpcore, anyio, aiosignal, watchfiles, starlette, pydantic, httpx, aiohttp, python-telegram-bot, openai, fastapi
-2025-11-30T17:38:33.006334506Z Successfully installed aiohappyeyeballs-2.6.1 aiohttp-3.13.2 aiosignal-1.4.0 annotated-types-0.7.0 anyio-4.12.0 attrs-25.4.0 certifi-2025.11.12 charset-normalizer-3.4.4 click-8.3.1 distro-1.9.0 fastapi-0.115.0 frozenlist-1.8.0 h11-0.16.0 httpcore-1.0.9 httptools-0.7.1 httpx-0.28.1 idna-3.11 iniconfig-2.3.0 jiter-0.12.0 json5-0.9.14 multidict-6.7.0 openai-2.8.1 packaging-25.0 pluggy-1.6.0 propcache-0.4.1 psycopg-3.2.1 psycopg-binary-3.2.1 pydantic-2.12.5 pydantic-core-2.41.5 pytest-7.4.0 python-dateutil-2.8.2 python-dotenv-1.0.0 python-telegram-bot-22.5 pyyaml-6.0.3 requests-2.31.0 six-1.17.0 sniffio-1.3.1 starlette-0.38.6 tqdm-4.67.1 typing-extensions-4.15.0 typing-inspection-0.4.2 urllib3-2.5.0 uvicorn-0.32.0 uvloop-0.22.1 watchfiles-1.1.1 websockets-15.0.1 yarl-1.22.0
-2025-11-30T17:38:33.088626618Z 
-2025-11-30T17:38:33.088642078Z [notice] A new release of pip is available: 24.0 -> 25.3
-2025-11-30T17:38:33.088645138Z [notice] To update, run: pip install --upgrade pip
-2025-11-30T17:38:36.417001667Z ==> Uploading build...
-2025-11-30T17:38:49.226611903Z ==> Uploaded in 9.6s. Compression took 3.2s
-2025-11-30T17:38:49.320104392Z ==> Build successful 🎉
-2025-11-30T17:38:52.175827542Z ==> Deploying...
-2025-11-30T17:39:21.038411539Z ==> Running 'python -m uvicorn src.tma_api.app:app --host 0.0.0.0 --port $PORT'
-2025-11-30T17:39:27.534967309Z /opt/render/project/src/.venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:383: UserWarning: Valid config keys have changed in V2:
-2025-11-30T17:39:27.534988609Z * 'allow_population_by_field_name' has been renamed to 'validate_by_name'
-2025-11-30T17:39:27.534993369Z   warnings.warn(message, UserWarning)
-2025-11-30T17:39:30.62980562Z INFO:     Started server process [55]
-2025-11-30T17:39:30.629831931Z INFO:     Waiting for application startup.
-2025-11-30T17:39:30.629836961Z INFO:     Application startup complete.
-2025-11-30T17:39:30.630452547Z INFO:     Uvicorn running on http://0.0.0.0:10000 (Press CTRL+C to quit)
-2025-11-30T17:39:30.756400309Z INFO:     127.0.0.1:52844 - "HEAD / HTTP/1.1" 404 Not Found
-2025-11-30T17:39:33.21370304Z ==> Your service is live 🎉
-2025-11-30T17:39:33.249467497Z ==> 
-2025-11-30T17:39:33.288654643Z ==> ///////////////////////////////////////////////////////////
-2025-11-30T17:39:33.32498115Z ==> 
-2025-11-30T17:39:33.356486697Z ==> Available at your primary URL https://luna-tarot-tma.onrender.com
-2025-11-30T17:39:33.389015154Z ==> 
-2025-11-30T17:39:33.420527771Z ==> ///////////////////////////////////////////////////////////
-2025-11-30T17:39:34.886156577Z INFO:     35.197.118.178:0 - "GET / HTTP/1.1" 404 Not Found
-2025-11-30T17:41:28.113295073Z INFO:     104.167.197.70:0 - "OPTIONS /spreads?page=1&limit=10 HTTP/1.1" 200 OK
-2025-11-30T17:41:28.124877147Z INFO:     104.167.197.70:0 - "OPTIONS /profile HTTP/1.1" 200 OK
-2025-11-30T17:41:28.844308081Z INFO:     104.167.197.70:0 - "GET /profile HTTP/1.1" 200 OK
-2025-11-30T17:41:40.778181604Z INFO:     104.167.197.70:0 - "GET /spreads?page=1&limit=10 HTTP/1.1" 200 OK
-2025-11-30T17:41:51.106225322Z INFO:     104.167.197.70:0 - "OPTIONS /profile HTTP/1.1" 200 OK
-2025-11-30T17:41:51.409227818Z INFO:     104.167.197.70:0 - "POST /profile HTTP/1.1" 200 OK
-2025-11-30T17:42:08.296901074Z INFO:     104.167.197.70:0 - "OPTIONS /spreads HTTP/1.1" 200 OK
-2025-11-30T17:42:08.605192929Z 2025-11-30 17:42:08,604 - src.user_database - INFO - 🗄️ UserDatabase: using SQLite DB at data/luna_users.db
-2025-11-30T17:42:08.61058213Z 2025-11-30 17:42:08,610 - src.user_database - INFO - ℹ️ Создаем таблицы с нуля...
-2025-11-30T17:42:08.652451091Z 2025-11-30 17:42:08,652 - src.user_database - INFO - ✅ Таблицы успешно созданы/мигрированы
-2025-11-30T17:42:08.652495272Z 2025-11-30 17:42:08,652 - src.user_database - INFO - 🔄 Проверка и миграция таблиц...
-2025-11-30T17:42:08.652828641Z 2025-11-30 17:42:08,652 - src.tma_api.tarot_deck - INFO - Loading tarot deck from /opt/render/project/src/data/tarot_deck.json
-2025-11-30T17:42:08.656504767Z 2025-11-30 17:42:08,656 - src.tma_api.tarot_deck - WARNING - Card has no code and id, generated fallback code: шут
-2025-11-30T17:42:08.656698763Z 2025-11-30 17:42:08,656 - src.tma_api.tarot_deck - INFO - Tarot deck loaded successfully (cards: 78)
-2025-11-30T17:42:09.837601538Z 2025-11-30 17:42:09,837 - src.ai_interpreter - WARNING - ai_interpreter: cannot import src.config, falling back to ENV-only config: No module named 'src.config'
-2025-11-30T17:42:21.541466795Z 2025-11-30 17:42:21,541 - src.tma_api.spreads.service - INFO - Created spread: user_id=123 spread_id=16 spread_type=one category=daily created_at=2025-11-30T17:42:20.232571
-2025-11-30T17:42:21.543398655Z INFO:     104.167.197.70:0 - "POST /spreads HTTP/1.1" 200 OK
-2025-11-30T17:42:21.846858893Z INFO:     104.167.197.70:0 - "OPTIONS /spreads/16/questions HTTP/1.1" 200 OK
-2025-11-30T17:42:24.706779199Z INFO:     104.167.197.70:0 - "GET /spreads/16/questions HTTP/1.1" 200 OK
-2025-11-30T17:43:20.825826972Z INFO:     188.17.209.110:0 - "OPTIONS /spreads?page=1&limit=10 HTTP/1.1" 200 OK
-2025-11-30T17:43:20.830268199Z INFO:     188.17.209.110:0 - "OPTIONS /profile HTTP/1.1" 200 OK
-2025-11-30T17:43:21.528478964Z INFO:     188.17.209.110:0 - "GET /profile HTTP/1.1" 200 OK
-2025-11-30T17:43:28.705764091Z INFO:     188.17.209.110:0 - "OPTIONS /spreads HTTP/1.1" 200 OK
-2025-11-30T17:43:33.436701814Z INFO:     188.17.209.110:0 - "GET /spreads?page=1&limit=10 HTTP/1.1" 200 OK
-2025-11-30T17:43:40.772797016Z 2025-11-30 17:43:40,770 - src.tma_api.spreads.service - INFO - Created spread: user_id=123 spread_id=17 spread_type=one category=daily created_at=2025-11-30T17:43:39.477346
-2025-11-30T17:43:40.772901508Z INFO:     188.17.209.110:0 - "POST /spreads HTTP/1.1" 200 OK
-2025-11-30T17:43:41.158317411Z INFO:     188.17.209.110:0 - "OPTIONS /spreads/17/questions HTTP/1.1" 200 OK
-2025-11-30T17:43:43.974610299Z INFO:     188.17.209.110:0 - "GET /spreads/17/questions HTTP/1.1" 200 OK
-2025-11-30T17:44:34.217569961Z ==> Detected service running on port 10000
-2025-11-30T17:44:34.376112419Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
-2025-11-30T17:59:42.59398825Z INFO:     Shutting down
-2025-11-30T17:59:42.694449457Z INFO:     Waiting for application shutdown.
-2025-11-30T17:59:42.694585261Z INFO:     Application shutdown complete.
-2025-11-30T17:59:42.694747565Z INFO:     Finished server process [55]
 
-В логах фронтэнда чисто 
+Это позволяет сработать существующим стилям типа .tarot-card.main { ... }, из-за чего раньше карта визуально «пропадала» / была нулевого размера.
+
+Убрали tarot-card-back-inner, вернули tarot-card-back
+
+Раньше для рубашки использовался <div className="tarot-card-back-inner" />, под который не было стилей.
+
+Теперь:
+
+<div className="tarot-card-back" />
+
+
+— что соответствует уже существующему CSS (там обычно фон рубашки, размеры, бордер и т.д.).
+
+Сохранили бесконечную рулетку на 78 позиций
+
+Введена константа:
+
+const TOTAL_VIRTUAL_CARDS = 78;
+
+
+clampIndex обеспечивает круговой диапазон 0..77:
+
+function clampIndex(index) {
+  const mod = index % TOTAL_VIRTUAL_CARDS;
+  return mod < 0 ? mod + TOTAL_VIRTUAL_CARDS : mod;
+}
+
+
+Автоспин через setInterval:
+
+useEffect(() => {
+  if (!isSpinning) return;
+  const id = window.setInterval(
+    () => setCurrentIndex(prev => clampIndex(prev + 1)),
+    80
+  );
+  return () => window.clearInterval(id);
+}, [isSpinning]);
+
+
+Связь с реальной колодой через deck + onPickCard сохранена
+
+Подготовка колоды:
+
+const deckArray =
+  Array.isArray(deck) && deck.length > 0 ? deck : null;
+
+
+Для каждого виртуального индекса берём карту из deck по модулю:
+
+const deckIndex = virtualIndex % deckArray.length;
+card = deckArray[deckIndex];
+
+
+При «поимке» карты:
+
+if (deckArray && deckArray.length > 0) {
+  const deckIndex = currentIndex % deckArray.length;
+  const selectedCard = deckArray[deckIndex];
+  onPickCard?.(selectedCard);
+}
+onPick?.();
+setIsSpinning(false);
+
+
+Viewer-режим оставлен рабочим, как до этого
+
+Показывает массив selectedCards горизонтальной лентой (tarot-carousel-strip).
+
+Использует image_url или /images/tarot/back.png, учитывает is_reversed через классы:
+
+"tarot-card-viewer" / "tarot-card-viewer-reversed";
+
+"tarot-card-image" / "tarot-card-image-reversed".
+
+Итог:
+В ритуале теперь снова видно центральную карту, она не «исчезает» и не рушит верстку; рулетка крутится по кругу, при клике по центральной карте или кнопке срабатывают и старый onPick, и новый onPickCard (при наличии deck).

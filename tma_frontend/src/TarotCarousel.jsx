@@ -1,13 +1,6 @@
 // tma_frontend/src/TarotCarousel.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 
-const TOTAL_VIRTUAL_CARDS = 78; // виртуальный круг на 78 позиций
-
-function clampIndex(index) {
-  const mod = index % TOTAL_VIRTUAL_CARDS;
-  return mod < 0 ? mod + TOTAL_VIRTUAL_CARDS : mod;
-}
-
 export default function TarotCarousel({
   mode = "viewer",
   selectedCards = [],
@@ -100,7 +93,16 @@ function TarotCarouselPicker({
   const deckArray =
     Array.isArray(deck) && deck.length > 0 ? deck : null;
 
-  // Бесконечная прокрутка: идём по виртуальному кругу 0..77
+  // Размер круга — по реальной колоде, иначе fallback на 78
+  const cardsCount =
+    deckArray && deckArray.length > 0 ? deckArray.length : 78;
+
+  function clampIndex(index) {
+    const mod = index % cardsCount;
+    return mod < 0 ? mod + cardsCount : mod;
+  }
+
+  // Бесконечная прокрутка: идём по кругу 0..cardsCount-1
   useEffect(() => {
     if (!isSpinning) return;
 
@@ -109,7 +111,7 @@ function TarotCarouselPicker({
     }, 80); // скорость вращения, можно подстроить
 
     return () => window.clearInterval(id);
-  }, [isSpinning]);
+  }, [isSpinning]); // только по isSpinning, как в ТЗ
 
   // Показываем 5 карт: [-2, -1, 0, +1, +2] от текущей
   const visibleIndices = useMemo(() => {
@@ -118,7 +120,7 @@ function TarotCarouselPicker({
       res.push(clampIndex(currentIndex + offset));
     }
     return res;
-  }, [currentIndex]);
+  }, [currentIndex, cardsCount]);
 
   const handlePick = useCallback(() => {
     // 1) если есть реальная колода – выбираем карту
@@ -150,8 +152,9 @@ function TarotCarouselPicker({
         </p>
       </div>
 
-      <div className="tarot-carousel-window">
-        <div className="tarot-carousel-strip">
+      {/* Обёртка для горизонтального колеса */}
+      <div className="tarot-carousel-wheel-container">
+        <div className="tarot-carousel-wheel">
           {visibleIndices.map((virtualIndex, slot) => {
             const isMain = slot === 2;
 
@@ -170,14 +173,13 @@ function TarotCarouselPicker({
               <div
                 key={`${virtualIndex}-${slot}`}
                 className={
-                  "tarot-card-slot" +
+                  "tarot-card-slot wheel-card" +
                   (isMain ? " tarot-card-slot-main" : "")
                 }
               >
                 <div
                   className={
-                    // ВАЖНО: оставляем класс "main",
-                    // чтобы сработал CSS .tarot-card.main
+                    // Класс "main" остаётся для существующего CSS .tarot-card.main
                     "tarot-card" + (isMain ? " main" : "")
                   }
                   onClick={isMain ? handlePick : undefined}
