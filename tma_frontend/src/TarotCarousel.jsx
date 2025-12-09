@@ -89,6 +89,15 @@ function TarotCarouselPicker({
   const count = pickedCount || 0;
   const isDone = count >= total;
 
+  // 🔍 Разовый лог того, что вообще прилетает в deck
+  console.log("[Carousel] deck prop received", {
+    rawType: typeof deck,
+    isArray: Array.isArray(deck),
+    isNull: deck === null,
+    hasKeys:
+      deck && typeof deck === "object" ? Object.keys(deck).length : null,
+  });
+
   if (isDone) {
     // Все карты уже пойманы – ритуал не показываем
     return null;
