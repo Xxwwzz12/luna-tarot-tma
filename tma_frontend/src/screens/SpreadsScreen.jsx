@@ -88,7 +88,7 @@ export default function SpreadsScreen({
     }
   };
 
-  // Теперь payload всегда "interactive" и содержит выбранные карты
+  // Payload: интерактивный режим с выбранными картами
   const buildPayload = () => {
     const cardsCodes = pickedCards.map((c) => c.code);
 
@@ -164,13 +164,11 @@ export default function SpreadsScreen({
     }
   };
 
-  // onPick из карусели — честный сигнал «карта поймана»
-  // handlePick вызывается после onPickCard (внутри TarotCarousel),
-  // поэтому к моменту вызова pickedCards уже обновлён.
+  // onPick — сигнал "карта поймана"
+  // используем pickedCards.length + 1, чтобы корректно работать
+  // независимо от того, в каком порядке TarotCarousel вызывает onPickCard/onPick
   const handlePick = () => {
-    // как только набрано нужное количество карт — можем сразу пытаться
-    // сделать расклад (валидация по вопросу/категории всё равно в handleSubmit)
-    if (pickedCards.length >= maxCards && !isSubmitting) {
+    if (pickedCards.length + 1 >= maxCards && !isSubmitting) {
       void handleSubmit();
     }
   };
@@ -353,13 +351,9 @@ export default function SpreadsScreen({
             deck={FULL_TAROT_DECK}
             pickedCount={pickedCount}
             maxCards={maxCards}
-            onPick={handlePick}
-            onPickCard={(card) => {
-              setPickedCards((prev) => {
-                if (prev.length >= maxCards) return prev;
-                if (prev.some((c) => c.code === card.code)) return prev;
-                return [...prev, card];
-              });
+            onPick={handlePick}          {/* ← сигнал "карта поймана" */}
+            onPickCard={(card) => {      /* ← сама карта */
+              setPickedCards((prev) => [...prev, card]);
               setError(null);
             }}
           />

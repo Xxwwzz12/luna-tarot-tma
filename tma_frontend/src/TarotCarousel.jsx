@@ -112,11 +112,6 @@ function TarotCarouselPicker({
   const wheelRef = useRef(null);
   const [cardStep, setCardStep] = useState(64); // запасной дефолт
 
-  function clampIndex(index) {
-    const mod = index % cardsCount;
-    return mod < 0 ? mod + cardsCount : mod;
-  }
-
   // После первого рендера измеряем ширину слота (карта + gap)
   useEffect(() => {
     if (!wheelRef.current) return;
@@ -132,11 +127,15 @@ function TarotCarouselPicker({
     if (!isSpinning) return;
 
     const id = window.setInterval(() => {
-      setCurrentIndex((prev) => clampIndex(prev + 1));
+      setCurrentIndex((prev) => {
+        const next = prev + 1;
+        // жёсткое зацикливание по длине колоды
+        return (next % cardsCount + cardsCount) % cardsCount;
+      });
     }, 80);
 
     return () => window.clearInterval(id);
-  }, [isSpinning]); // только isSpinning, как в ТЗ
+  }, [isSpinning, cardsCount]);
 
   // Привязка currentIndex к реальному scrollLeft
   useEffect(() => {
@@ -151,24 +150,26 @@ function TarotCarouselPicker({
   }, [currentIndex, cardStep]);
 
   const handlePick = useCallback(() => {
-    const safeIndex = clampIndex(currentIndex);
+    // 1) сразу останавливаем спин
+    setIsSpinning(false);
 
-    // 1) если есть реальная колода – выберем карту по индексу
+    // 2) безопасный индекс в пределах колоды
+    const safeIndex =
+      (currentIndex % cardsCount + cardsCount) % cardsCount;
+
+    // 3) карта из deck, если она есть
     if (deckArray && deckArray.length > 0) {
       const selectedCard = deckArray[safeIndex];
-      if (typeof onPickCard === "function" && selectedCard) {
+      if (selectedCard && typeof onPickCard === "function") {
         onPickCard(selectedCard);
       }
     }
 
-    // 2) старый контракт – просто сигнал «карта поймана»
+    // 4) старый контракт — сигнал наверх
     if (typeof onPick === "function") {
       onPick();
     }
-
-    // 3) остановить рулетку на пойманной карте
-    setIsSpinning(false);
-  }, [currentIndex, deckArray, onPick, onPickCard, cardsCount]);
+  }, [currentIndex, cardsCount, deckArray, onPick, onPickCard]);
 
   return (
     <div className="tarot-carousel tarot-carousel-picker">
