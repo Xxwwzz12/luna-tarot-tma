@@ -31,6 +31,21 @@ export function normalizeCard(raw) {
 }
 
 // Полная колода — источник правды для всех компонентов фронта.
-export const FULL_TAROT_DECK = Array.isArray(rawDeck)
-  ? rawDeck.map(normalizeCard)
-  : [];
+//
+// Поддерживаем оба варианта структуры JSON:
+// 1) Список карт:   [ { ... }, { ... }, ... ]
+// 2) Словарь карт:  { "0": { ... }, "1": { ... }, ... }
+
+let rawCardsArray = [];
+
+if (Array.isArray(rawDeck)) {
+  rawCardsArray = rawDeck;
+} else if (rawDeck && typeof rawDeck === "object") {
+  rawCardsArray = Object.values(rawDeck);
+} else {
+  rawCardsArray = [];
+}
+
+export const FULL_TAROT_DECK = rawCardsArray
+  .filter(Boolean)
+  .map(normalizeCard);

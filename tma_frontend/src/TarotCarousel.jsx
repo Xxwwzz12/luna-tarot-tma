@@ -89,14 +89,8 @@ function TarotCarouselPicker({
   const count = pickedCount || 0;
   const isDone = count >= total;
 
-  // 🔍 Разовый лог того, что вообще прилетает в deck
-  console.log("[Carousel] deck prop received", {
-    rawType: typeof deck,
-    isArray: Array.isArray(deck),
-    isNull: deck === null,
-    hasKeys:
-      deck && typeof deck === "object" ? Object.keys(deck).length : null,
-  });
+  // лог deck только один раз
+  const hasLoggedDeckRef = useRef(false);
 
   if (isDone) {
     // Все карты уже пойманы – ритуал не показываем
@@ -115,6 +109,24 @@ function TarotCarouselPicker({
     const vals = Object.values(deck).filter(Boolean);
     deckArray = vals.length > 0 ? vals : null;
   }
+
+  // 🔍 Лог deck только при первом приходе пропа
+  useEffect(() => {
+    if (!deck) return;
+    if (hasLoggedDeckRef.current) return;
+
+    hasLoggedDeckRef.current = true;
+
+    console.log("[Carousel] deck prop received", {
+      rawType: typeof deck,
+      isArray: Array.isArray(deck),
+      isNull: deck === null,
+      hasKeys:
+        deck && typeof deck === "object"
+          ? Object.keys(deck).length
+          : null,
+    });
+  }, [deck]);
 
   // Лента реальных карт (или 78 заглушек, если deck нет)
   const cardsArray =
@@ -146,6 +158,7 @@ function TarotCarouselPicker({
     const id = window.setInterval(() => {
       setCurrentIndex((prev) => {
         const next = prev + 1;
+        // жёсткое зацикливание по длине колоды
         return (next % cardsCount + cardsCount) % cardsCount;
       });
     }, 80);
