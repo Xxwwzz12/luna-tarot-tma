@@ -166,7 +166,7 @@ export default function SpreadsScreen({
 
   // onPick — сигнал "карта поймана"
   // используем pickedCards.length + 1, чтобы корректно работать
-  // независимо от того, в каком порядке TarotCarousel вызывает onPickCard/onPick
+  // независимо от порядка вызова onPickCard/onPick внутри TarotCarousel
   const handlePick = () => {
     if (pickedCards.length + 1 >= maxCards && !isSubmitting) {
       void handleSubmit();
@@ -351,8 +351,8 @@ export default function SpreadsScreen({
             deck={FULL_TAROT_DECK}
             pickedCount={pickedCount}
             maxCards={maxCards}
-            onPick={handlePick}          {/* ← сигнал "карта поймана" */}
-            onPickCard={(card) => {      /* ← сама карта */
+            onPick={handlePick}
+            onPickCard={(card) => {
               setPickedCards((prev) => [...prev, card]);
               setError(null);
             }}
