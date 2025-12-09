@@ -1,11 +1,8 @@
 // tma_frontend/src/data/tarotDeck.js
 
-// Импорт реального JSON из соседнего файла.
-// JSON лежит в том же каталоге (src/data/).
 import rawDeck from "./tarot_deck.json";
 
 // Минимальная нормализация под фронт.
-// Задача — привести карту к полностью предсказуемому формату.
 export function normalizeCard(raw) {
   const code =
     raw.code ||
@@ -21,31 +18,25 @@ export function normalizeCard(raw) {
     description: raw.description || "",
     image_url: raw.image_url || null,
 
-    // Значения карты (объекты или {})
     meaning_upright: raw.meaning_upright || {},
     meaning_reversed: raw.meaning_reversed || {},
-
-    // Ключевые слова (объект или {})
     keywords: raw.keywords || {},
   };
 }
 
-// Полная колода — источник правды для всех компонентов фронта.
-//
-// Поддерживаем оба варианта структуры JSON:
-// 1) Список карт:   [ { ... }, { ... }, ... ]
-// 2) Словарь карт:  { "0": { ... }, "1": { ... }, ... }
+// ---------------------------
+//   ЭКСПОРТ ПОЛНОЙ КОЛОДЫ
+// ---------------------------
 
-let rawCardsArray = [];
+// FULL_TAROT_DECK должен содержать все 78 карт без модификаций.
+export const FULL_TAROT_DECK = Array.isArray(rawDeck)
+  ? rawDeck.map(normalizeCard)
+  : [];
 
-if (Array.isArray(rawDeck)) {
-  rawCardsArray = rawDeck;
-} else if (rawDeck && typeof rawDeck === "object") {
-  rawCardsArray = Object.values(rawDeck);
-} else {
-  rawCardsArray = [];
+// ---------------------------
+//   DEV-ЛОГ ДЛИНЫ КОЛОДЫ
+// ---------------------------
+if (import.meta?.env?.DEV) {
+  // Ожидаем 78
+  console.log("[Deck] FULL_TAROT_DECK length:", FULL_TAROT_DECK.length);
 }
-
-export const FULL_TAROT_DECK = rawCardsArray
-  .filter(Boolean)
-  .map(normalizeCard);

@@ -89,11 +89,9 @@ function TarotCarouselPicker({
   const count = pickedCount || 0;
   const isDone = count >= total;
 
-  // лог deck только один раз
-  const hasLoggedDeckRef = useRef(false);
-
+  // если все карты уже пойманы — ритуал не показываем и
+  // ВАЖНО: никаких хуков до этого return
   if (isDone) {
-    // Все карты уже пойманы – ритуал не показываем
     return null;
   }
 
@@ -110,11 +108,26 @@ function TarotCarouselPicker({
     deckArray = vals.length > 0 ? vals : null;
   }
 
-  // 🔍 Лог deck только при первом приходе пропа
-  useEffect(() => {
-    if (!deck) return;
-    if (hasLoggedDeckRef.current) return;
+  // Лента реальных карт (или 78 заглушек, если deck нет)
+  const cardsArray =
+    deckArray && deckArray.length > 0
+      ? deckArray
+      : Array.from({ length: TOTAL_CARDS }, () => null);
 
+  const cardsCount = cardsArray.length;
+
+  // ==== ХУКИ ТОЛЬКО ПОСЛЕ раннего return isDone ====
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isSpinning, setIsSpinning] = useState(true);
+
+  const wheelRef = useRef(null);
+  const [cardStep, setCardStep] = useState(64); // запасной дефолт
+  const hasLoggedDeckRef = useRef(false);
+
+  // 🔍 Лог deck только один раз после первого прихода пропа
+  useEffect(() => {
+    if (hasLoggedDeckRef.current) return;
     hasLoggedDeckRef.current = true;
 
     console.log("[Carousel] deck prop received", {
@@ -128,21 +141,7 @@ function TarotCarouselPicker({
     });
   }, [deck]);
 
-  // Лента реальных карт (или 78 заглушек, если deck нет)
-  const cardsArray =
-    deckArray && deckArray.length > 0
-      ? deckArray
-      : Array.from({ length: TOTAL_CARDS }, () => null);
-
-  const cardsCount = cardsArray.length;
-
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isSpinning, setIsSpinning] = useState(true);
-
-  const wheelRef = useRef(null);
-  const [cardStep, setCardStep] = useState(64); // запасной дефолт
-
-  // измеряем ширину слота (карта + gap)
+  // измеряем ширину слота (карта + gap), чтобы правильно крутить scroll
   useEffect(() => {
     if (!wheelRef.current) return;
     const firstCard = wheelRef.current.querySelector(".wheel-card");
@@ -151,7 +150,7 @@ function TarotCarouselPicker({
     }
   }, []);
 
-  // Бесконечная смена индекса — чистый автоспин
+  // Бесконечная смена индекса — чистый автоспин по длине реальной колоды
   useEffect(() => {
     if (!isSpinning) return;
 
@@ -166,9 +165,10 @@ function TarotCarouselPicker({
     return () => window.clearInterval(id);
   }, [isSpinning, cardsCount]);
 
-  // Привязка currentIndex к реальному scrollLeft
+  // Привязка currentIndex к реальному scrollLeft — физическое кручение колеса
   useEffect(() => {
     if (!wheelRef.current) return;
+
     const targetLeft = currentIndex * cardStep;
 
     wheelRef.current.scrollTo({
@@ -185,10 +185,10 @@ function TarotCarouselPicker({
       deckLength: deckArray ? deckArray.length : null,
     });
 
-    // 1) стоп спина
+    // 1) сразу стоп спина, чтобы колесо не крутилось дальше
     setIsSpinning(false);
 
-    // 2) безопасный индекс
+    // 2) безопасный индекс в диапазоне 0..cardsCount-1
     const safeIndex =
       (currentIndex % cardsCount + cardsCount) % cardsCount;
 
@@ -200,7 +200,7 @@ function TarotCarouselPicker({
       }
     }
 
-    // 4) старый контракт наверх
+    // 4) старый контракт наверх — «+1 карта поймана»
     if (typeof onPick === "function") {
       onPick();
     }

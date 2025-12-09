@@ -618,7 +618,7 @@ button:disabled {
   flex-direction: row;
   gap: 8px;
   padding: 8px 16px;
-  width: max-content;
+  width: max-content; /* ширина = содержимое */
   scroll-snap-type: x mandatory;
 }
 
@@ -657,8 +657,6 @@ button:disabled {
 .tarot-carousel-multi .tarot-carousel-cards-grid::-webkit-scrollbar {
   display: none;
 }
-
-/* (tarot-card-view уже flex: 0 0 auto; max-width: 140px выше) */
 
 /* =========================================================
    ПОДПИСИ К КАРТЕ (позиция / имя)

@@ -59,18 +59,13 @@ export default function SpreadsScreen({
   const maxCards = spreadType === "one" ? 1 : 3;
   const pickedCount = pickedCards.length;
 
-  // Нормализация колоды для picker (поддержка и массива, и словаря)
-  const pickerDeck = Array.isArray(FULL_TAROT_DECK)
-    ? FULL_TAROT_DECK
-    : FULL_TAROT_DECK && typeof FULL_TAROT_DECK === "object"
-      ? Object.values(FULL_TAROT_DECK).filter(Boolean)
-      : [];
+  // Колода для picker — берём как есть, без преобразований
+  const pickerDeck = FULL_TAROT_DECK;
 
   if (IS_DEV) {
-    // лёгкий dev-лог, чтобы убедиться, что колода нормальна
     console.log("[Spreads] pickerDeck meta", {
       isArray: Array.isArray(pickerDeck),
-      length: pickerDeck.length,
+      length: Array.isArray(pickerDeck) ? pickerDeck.length : 0,
     });
   }
 
