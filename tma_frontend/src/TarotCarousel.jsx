@@ -1,5 +1,12 @@
 // tma_frontend/src/TarotCarousel.jsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
+
+const TOTAL_CARDS = 78; // fallback, если deck не передана
 
 export default function TarotCarousel({
   mode = "viewer",
@@ -87,47 +94,68 @@ function TarotCarouselPicker({
     return null;
   }
 
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isSpinning, setIsSpinning] = useState(true);
-
   const deckArray =
     Array.isArray(deck) && deck.length > 0 ? deck : null;
 
-  // Размер круга — по реальной колоде, иначе fallback на 78
-  const cardsCount =
-    deckArray && deckArray.length > 0 ? deckArray.length : 78;
+  // Лента реальных карт (или 78 заглушек, если deck нет)
+  const cardsArray =
+    deckArray && deckArray.length > 0
+      ? deckArray
+      : Array.from({ length: TOTAL_CARDS }, () => null);
+  const cardsCount = cardsArray.length;
+
+  // Индекс текущей "главной" карты в ленте
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isSpinning, setIsSpinning] = useState(true);
+
+  // Реф и шаг для реального скролла
+  const wheelRef = useRef(null);
+  const [cardStep, setCardStep] = useState(64); // запасной дефолт
 
   function clampIndex(index) {
     const mod = index % cardsCount;
     return mod < 0 ? mod + cardsCount : mod;
   }
 
-  // Бесконечная прокрутка: идём по кругу 0..cardsCount-1
+  // После первого рендера измеряем ширину слота (карта + gap)
+  useEffect(() => {
+    if (!wheelRef.current) return;
+    const firstCard = wheelRef.current.querySelector(".wheel-card");
+    if (firstCard) {
+      // ширина + примерно 8px gap (как в CSS)
+      setCardStep(firstCard.offsetWidth + 8);
+    }
+  }, []);
+
+  // Бесконечная смена индекса — чистый автоспин
   useEffect(() => {
     if (!isSpinning) return;
 
     const id = window.setInterval(() => {
       setCurrentIndex((prev) => clampIndex(prev + 1));
-    }, 80); // скорость вращения, можно подстроить
+    }, 80);
 
     return () => window.clearInterval(id);
-  }, [isSpinning]); // только по isSpinning, как в ТЗ
+  }, [isSpinning]); // только isSpinning, как в ТЗ
 
-  // Показываем 5 карт: [-2, -1, 0, +1, +2] от текущей
-  const visibleIndices = useMemo(() => {
-    const res = [];
-    for (let offset = -2; offset <= 2; offset += 1) {
-      res.push(clampIndex(currentIndex + offset));
-    }
-    return res;
-  }, [currentIndex, cardsCount]);
+  // Привязка currentIndex к реальному scrollLeft
+  useEffect(() => {
+    if (!wheelRef.current) return;
+
+    const targetLeft = currentIndex * cardStep;
+
+    wheelRef.current.scrollTo({
+      left: targetLeft,
+      behavior: "smooth",
+    });
+  }, [currentIndex, cardStep]);
 
   const handlePick = useCallback(() => {
-    // 1) если есть реальная колода – выбираем карту
-    if (deckArray && deckArray.length > 0) {
-      const deckIndex = currentIndex % deckArray.length;
-      const selectedCard = deckArray[deckIndex];
+    const safeIndex = clampIndex(currentIndex);
 
+    // 1) если есть реальная колода – выберем карту по индексу
+    if (deckArray && deckArray.length > 0) {
+      const selectedCard = deckArray[safeIndex];
       if (typeof onPickCard === "function" && selectedCard) {
         onPickCard(selectedCard);
       }
@@ -140,7 +168,7 @@ function TarotCarouselPicker({
 
     // 3) остановить рулетку на пойманной карте
     setIsSpinning(false);
-  }, [currentIndex, deckArray, onPick, onPickCard]);
+  }, [currentIndex, deckArray, onPick, onPickCard, cardsCount]);
 
   return (
     <div className="tarot-carousel tarot-carousel-picker">
@@ -152,17 +180,11 @@ function TarotCarouselPicker({
         </p>
       </div>
 
-      {/* Обёртка для горизонтального колеса */}
+      {/* Обёртка для горизонтального барабана */}
       <div className="tarot-carousel-wheel-container">
-        <div className="tarot-carousel-wheel">
-          {visibleIndices.map((virtualIndex, slot) => {
-            const isMain = slot === 2;
-
-            let card = null;
-            if (deckArray && deckArray.length > 0) {
-              const deckIndex = virtualIndex % deckArray.length;
-              card = deckArray[deckIndex];
-            }
+        <div className="tarot-carousel-wheel" ref={wheelRef}>
+          {cardsArray.map((card, index) => {
+            const isMain = index === currentIndex;
 
             const hasFace = card && card.image_url;
             const imgSrc = hasFace
@@ -171,7 +193,7 @@ function TarotCarouselPicker({
 
             return (
               <div
-                key={`${virtualIndex}-${slot}`}
+                key={card?.code || card?.id || index}
                 className={
                   "tarot-card-slot wheel-card" +
                   (isMain ? " tarot-card-slot-main" : "")
@@ -179,8 +201,8 @@ function TarotCarouselPicker({
               >
                 <div
                   className={
-                    // Класс "main" остаётся для существующего CSS .tarot-card.main
-                    "tarot-card" + (isMain ? " main" : "")
+                    "tarot-card tarot-card-back" +
+                    (isMain ? " tarot-card-main" : "")
                   }
                   onClick={isMain ? handlePick : undefined}
                 >
@@ -191,7 +213,7 @@ function TarotCarouselPicker({
                       className="tarot-card-image"
                     />
                   ) : (
-                    <div className="tarot-card-back" />
+                    <div className="tarot-card-back-inner" />
                   )}
                 </div>
               </div>
