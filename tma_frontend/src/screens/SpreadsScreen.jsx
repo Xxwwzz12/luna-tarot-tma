@@ -35,7 +35,6 @@ function spreadsLog(level, label, payload) {
   const styleMain = "color:#8b5cf6;font-weight:bold;";
   const styleLabel = "color:#e5e7eb;";
 
-  // level: "log" | "warn" | "error"
   const fn = console[level] || console.log;
   if (payload !== undefined) {
     fn(prefix, styleMain, styleLabel, payload);
@@ -59,6 +58,21 @@ export default function SpreadsScreen({
 
   const maxCards = spreadType === "one" ? 1 : 3;
   const pickedCount = pickedCards.length;
+
+  // Нормализация колоды для picker (поддержка и массива, и словаря)
+  const pickerDeck = Array.isArray(FULL_TAROT_DECK)
+    ? FULL_TAROT_DECK
+    : FULL_TAROT_DECK && typeof FULL_TAROT_DECK === "object"
+      ? Object.values(FULL_TAROT_DECK).filter(Boolean)
+      : [];
+
+  if (IS_DEV) {
+    // лёгкий dev-лог, чтобы убедиться, что колода нормальна
+    console.log("[Spreads] pickerDeck meta", {
+      isArray: Array.isArray(pickerDeck),
+      length: pickerDeck.length,
+    });
+  }
 
   // Сброс выбранных карт при смене типа расклада
   useEffect(() => {
@@ -433,7 +447,7 @@ export default function SpreadsScreen({
 
           <TarotCarousel
             mode="picker"
-            deck={FULL_TAROT_DECK}
+            deck={pickerDeck}
             pickedCount={pickedCount}
             maxCards={maxCards}
             onPick={handlePick}
