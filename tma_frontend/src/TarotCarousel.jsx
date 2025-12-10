@@ -75,7 +75,7 @@ function TarotCarouselViewer({ cards }) {
 }
 
 /* =======================
- * PICKER MODE
+ * PICKER MODE — «барабан»
  * ======================= */
 
 function TarotCarouselPicker({
@@ -89,8 +89,8 @@ function TarotCarouselPicker({
   const count = pickedCount || 0;
   const isDone = count >= total;
 
-  // если все карты уже пойманы — ритуал не показываем и
-  // ВАЖНО: никаких хуков до этого return
+  // Все карты уже пойманы — ритуал не показываем.
+  // ВАЖНО: никаких хуков до этого return.
   if (isDone) {
     return null;
   }
@@ -116,13 +116,13 @@ function TarotCarouselPicker({
 
   const cardsCount = cardsArray.length;
 
-  // ==== ХУКИ ТОЛЬКО ПОСЛЕ раннего return isDone ====
+  // ==== ХУКИ (после раннего return isDone) ====
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isSpinning, setIsSpinning] = useState(true);
+  const [cardStep, setCardStep] = useState(64); // базовое значение
+  const [usedIndices, setUsedIndices] = useState([]);
 
   const wheelRef = useRef(null);
-  const [cardStep, setCardStep] = useState(64); // запасной дефолт
   const hasLoggedDeckRef = useRef(false);
 
   // 🔍 Лог deck только один раз после первого прихода пропа
@@ -141,70 +141,91 @@ function TarotCarouselPicker({
     });
   }, [deck]);
 
-  // измеряем ширину слота (карта + gap), чтобы правильно крутить scroll
+  // Измеряем шаг по ширине wheel-card (width + gap)
   useEffect(() => {
     if (!wheelRef.current) return;
-    const firstCard = wheelRef.current.querySelector(".wheel-card");
-    if (firstCard) {
-      setCardStep(firstCard.offsetWidth + 8);
+    const first = wheelRef.current.querySelector(".wheel-card");
+    if (first) {
+      const rect = first.getBoundingClientRect();
+      setCardStep(rect.width + 8); // 8px — gap из CSS
     }
-  }, []);
+  }, [cardsCount]);
 
-  // Бесконечная смена индекса — чистый автоспин по длине реальной колоды
-  useEffect(() => {
-    if (!isSpinning) return;
+  // Обновляем currentIndex по scrollLeft — чистый пользовательский свайп
+  const handleScroll = useCallback(() => {
+    if (!wheelRef.current || !cardStep) return;
 
-    const id = window.setInterval(() => {
-      setCurrentIndex((prev) => {
-        const next = prev + 1;
-        // жёсткое зацикливание по длине колоды
-        return (next % cardsCount + cardsCount) % cardsCount;
-      });
-    }, 80);
+    const left = wheelRef.current.scrollLeft || 0;
+    const rawIndex = Math.round(left / cardStep);
+    const safeIndex =
+      ((rawIndex % cardsCount) + cardsCount) % cardsCount;
 
-    return () => window.clearInterval(id);
-  }, [isSpinning, cardsCount]);
+    setCurrentIndex(safeIndex);
+  }, [cardStep, cardsCount]);
 
-  // Привязка currentIndex к реальному scrollLeft — физическое кручение колеса
-  useEffect(() => {
-    if (!wheelRef.current) return;
+  // Клик по конкретной рубашке — плавно центрируем её
+  const handleCardClick = useCallback(
+    (index) => {
+      setCurrentIndex(index);
+      if (wheelRef.current && cardStep) {
+        wheelRef.current.scrollTo({
+          left: index * cardStep,
+          behavior: "smooth",
+        });
+      }
+    },
+    [cardStep]
+  );
 
-    const targetLeft = currentIndex * cardStep;
-
-    wheelRef.current.scrollTo({
-      left: targetLeft,
-      behavior: "smooth",
-    });
-  }, [currentIndex, cardStep]);
-
+  // Выбор карты: не повторяем уже выбранные индексы
   const handlePick = useCallback(() => {
+    if (!cardsCount) return;
+
+    let safeIndex =
+      ((currentIndex % cardsCount) + cardsCount) % cardsCount;
+
+    // Если эту карту уже выбирали — берём первую доступную
+    if (usedIndices.includes(safeIndex)) {
+      const all = Array.from({ length: cardsCount }, (_, i) => i);
+      const available = all.filter((i) => !usedIndices.includes(i));
+      if (!available.length) {
+        // все карты уже выбраны — выходим
+        return;
+      }
+      safeIndex = available[0];
+    }
+
+    const selectedCard =
+      deckArray && deckArray.length > 0
+        ? deckArray[safeIndex]
+        : null;
+
     console.log("[Carousel] handlePick fired", {
       currentIndex,
+      safeIndex,
       cardsCount,
       hasDeck: !!deckArray,
       deckLength: deckArray ? deckArray.length : null,
+      selectedCode: selectedCard?.code,
     });
 
-    // 1) сразу стоп спина, чтобы колесо не крутилось дальше
-    setIsSpinning(false);
-
-    // 2) безопасный индекс в диапазоне 0..cardsCount-1
-    const safeIndex =
-      (currentIndex % cardsCount + cardsCount) % cardsCount;
-
-    // 3) реальная карта из deck (если есть)
-    if (deckArray && deckArray.length > 0) {
-      const selectedCard = deckArray[safeIndex];
-      if (selectedCard && typeof onPickCard === "function") {
-        onPickCard(selectedCard);
-      }
+    if (selectedCard && typeof onPickCard === "function") {
+      onPickCard(selectedCard);
     }
 
-    // 4) старый контракт наверх — «+1 карта поймана»
+    setUsedIndices((prev) => [...prev, safeIndex]);
+
     if (typeof onPick === "function") {
       onPick();
     }
-  }, [currentIndex, cardsCount, deckArray, onPick, onPickCard]);
+  }, [
+    currentIndex,
+    cardsCount,
+    deckArray,
+    usedIndices,
+    onPickCard,
+    onPick,
+  ]);
 
   return (
     <div className="tarot-carousel tarot-carousel-picker">
@@ -217,57 +238,21 @@ function TarotCarouselPicker({
       </div>
 
       <div className="tarot-carousel-wheel-container">
-        <div className="tarot-carousel-wheel" ref={wheelRef}>
-          {cardsArray.map((card, index) => {
-            const isMain = index === currentIndex;
-
-            const hasFace = card && card.image_url;
-            const imgSrc = hasFace
-              ? card.image_url
-              : "/images/tarot/back.png";
-
-            return (
-              <div
-                key={card?.code || card?.id || index}
-                className={
-                  "tarot-card-slot wheel-card" +
-                  (isMain ? " tarot-card-slot-main" : "")
-                }
-              >
-                <div
-                  className={
-                    "tarot-card tarot-card-back" +
-                    (isMain ? " tarot-card-main" : "")
-                  }
-                  onClick={isMain ? handlePick : undefined}
-                >
-                  {isMain && (
-                    <span
-                      className="debug-dot"
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        fontSize: 10,
-                      }}
-                    >
-                      ●
-                    </span>
-                  )}
-
-                  {hasFace ? (
-                    <img
-                      src={imgSrc}
-                      alt={card?.name || "Карта Таро"}
-                      className="tarot-card-image"
-                    />
-                  ) : (
-                    <div className="tarot-card-back-inner" />
-                  )}
-                </div>
-              </div>
-            );
-          })}
+        <div
+          ref={wheelRef}
+          className="tarot-carousel-wheel"
+          onScroll={handleScroll}
+        >
+          {cardsArray.map((card, index) => (
+            <div
+              key={card?.code || card?.id || index}
+              className={
+                "wheel-card" +
+                (index === currentIndex ? " wheel-card-active" : "")
+              }
+              onClick={() => handleCardClick(index)}
+            />
+          ))}
         </div>
       </div>
 

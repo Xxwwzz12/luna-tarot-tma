@@ -97,9 +97,11 @@ export default function SpreadsScreen({
 
   const handleCategoryChange = (nextCat) => {
     if (useCustomQuestion) {
-      spreadsLog("warn", "handleCategoryChange ignored (useCustomQuestion=true)", {
-        nextCat,
-      });
+      spreadsLog(
+        "warn",
+        "handleCategoryChange ignored (useCustomQuestion=true)",
+        { nextCat },
+      );
       return;
     }
     spreadsLog("log", "handleCategoryChange", { nextCat });
@@ -140,27 +142,54 @@ export default function SpreadsScreen({
 
   // Payload: интерактивный режим с выбранными картами
   const buildPayload = () => {
-    // Коды карт с защитой, + dev-лог, что реально улетает
-    const cardCodes = pickedCards.map((c) => (c?.code != null ? c.code : null));
+    // 1) Собираем коды карт и жёстко строкифицируем
+    const cardCodes = pickedCards.map((c) => {
+      if (c == null || c.code == null) return null;
+      // Бэк ждёт строки, даже если код числовой (0–21)
+      return String(c.code);
+    });
 
+    // 2) Чистим: только непустые строки
+    const cleanedCardCodes = cardCodes.filter(
+      (code) => typeof code === "string" && code.trim() !== "",
+    );
+
+    // 3) Dev-лог, что реально уходит
     if (IS_DEV) {
       console.log("[Spreads] interactive payload (raw)", {
         spreadType,
         useCustomQuestion,
         category,
         customQuestion,
-        cards: cardCodes,
+        cardsRaw: cardCodes,
+        cardsClean: cleanedCardCodes,
         rawPickedCards: pickedCards,
       });
     }
 
+    // 4) Если по какой-то причине количество кодов не совпадает с maxCards —
+    // не шлём запрос, показываем ошибку.
+    if (cleanedCardCodes.length !== maxCards) {
+      spreadsLog("warn", "cleanedCardCodes length mismatch", {
+        maxCards,
+        rawLen: cardCodes.length,
+        cleanLen: cleanedCardCodes.length,
+      });
+      setError(
+        "Кажется, карты выбраны некорректно. Попробуйте ещё раз.",
+      );
+      return null;
+    }
+
+    // 5) Собираем payload под разные типы расклада,
+    // везде используем cards: cleanedCardCodes
     if (spreadType === "one") {
       const payload = {
         mode: "interactive",
         spread_type: "one",
         category: null, // бэк сам поставит "daily"
         question: null,
-        cards: cardCodes,
+        cards: cleanedCardCodes,
       };
       spreadsLog("log", "buildPayload (one)", payload);
       return payload;
@@ -175,7 +204,7 @@ export default function SpreadsScreen({
         spread_type: "three",
         category: null, // при своём вопросе категорию не отправляем
         question: trimmedQuestion,
-        cards: cardCodes,
+        cards: cleanedCardCodes,
       };
       spreadsLog("log", "buildPayload (three, customQuestion)", payload);
       return payload;
@@ -189,7 +218,7 @@ export default function SpreadsScreen({
       spread_type: "three",
       category: effectiveCategory,
       question: null,
-      cards: cardCodes,
+      cards: cleanedCardCodes,
     };
     spreadsLog("log", "buildPayload (three, category)", payload);
     return payload;
@@ -204,15 +233,19 @@ export default function SpreadsScreen({
       return;
     }
 
-    // Валидация перед отправкой
+    // Валидация перед отправкой (логика вопроса/категории)
     if (spreadType === "three") {
       if (useCustomQuestion) {
         if (!customQuestion.trim()) {
           const msg = "Пожалуйста, сформулируйте ваш вопрос.";
-          spreadsLog("warn", "validation failed (empty customQuestion)", {
-            spreadType,
-            useCustomQuestion,
-          });
+          spreadsLog(
+            "warn",
+            "validation failed (empty customQuestion)",
+            {
+              spreadType,
+              useCustomQuestion,
+            },
+          );
           setError(msg);
           return;
         }
@@ -232,11 +265,27 @@ export default function SpreadsScreen({
     if (pickedCards.length < maxCards) {
       const msg =
         "Сначала выберите все карты, а потом сделайте расклад.";
-      spreadsLog("warn", "validation failed (not enough pickedCards)", {
-        pickedLen: pickedCards.length,
-        maxCards,
-      });
+      spreadsLog(
+        "warn",
+        "validation failed (not enough pickedCards)",
+        {
+          pickedLen: pickedCards.length,
+          maxCards,
+        },
+      );
       setError(msg);
+      return;
+    }
+
+    // Собираем payload уже после всех валидаций
+    const payload = buildPayload();
+    if (!payload) {
+      // buildPayload сам залогировал и поставил ошибку
+      spreadsLog(
+        "warn",
+        "handleSubmit aborted: buildPayload returned null",
+        {},
+      );
       return;
     }
 
@@ -244,7 +293,6 @@ export default function SpreadsScreen({
       setIsSubmitting(true);
       setError(null);
 
-      const payload = buildPayload();
       spreadsLog("log", "handleSubmit → onCreateSpread", payload);
       await onCreateSpread(payload);
       spreadsLog("log", "handleSubmit success", {});
@@ -410,7 +458,9 @@ export default function SpreadsScreen({
               </div>
 
               <div className="field-group">
-                <label className="field-label">Свой вопрос вместо категории</label>
+                <label className="field-label">
+                  Свой вопрос вместо категории
+                </label>
                 <button
                   type="button"
                   className={`btn ${
