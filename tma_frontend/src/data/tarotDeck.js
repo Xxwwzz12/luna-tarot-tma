@@ -24,37 +24,59 @@ export function normalizeCard(raw) {
   };
 }
 
-// Преобразуем rawDeck и из списка, и из словаря в массив карт.
-function toArrayFromRaw(raw) {
-  if (Array.isArray(raw)) {
-    return raw;
-  }
+// Эвристика: понять, что объект "похож на карту".
+function isProbablyCard(obj) {
+  if (!obj || typeof obj !== "object") return false;
 
-  if (raw && typeof raw === "object") {
-    return Object.keys(raw)
-      .sort((a, b) => Number(a) - Number(b)) // "0","1","10" → 0,1,10
-      .map((key) => raw[key])
-      .filter(Boolean);
-  }
+  const hasNameOrId = "name" in obj || "id" in obj;
+  const hasImageOrMeanings =
+    "image_url" in obj ||
+    "meaning_upright" in obj ||
+    "meaning_reversed" in obj;
 
-  return [];
+  return hasNameOrId && hasImageOrMeanings;
 }
 
-const rawDeckArray = toArrayFromRaw(rawDeck);
+// Рекурсивно собираем все "листовые" объекты-карты из любого уровня вложенности.
+function collectCards(node, acc) {
+  if (!node) return acc;
 
-// Полная колода — всегда массив нормализованных карт.
-export const FULL_TAROT_DECK = rawDeckArray.map(normalizeCard);
+  if (Array.isArray(node)) {
+    node.forEach((item) => collectCards(item, acc));
+    return acc;
+  }
 
-// Диагностика в dev-режиме.
-if (import.meta?.env?.DEV) {
-  console.log("[Deck] rawDeck meta", {
-    isArray: Array.isArray(rawDeck),
-    type: typeof rawDeck,
-    keys:
-      rawDeck && typeof rawDeck === "object"
-        ? Object.keys(rawDeck).length
-        : null,
-  });
+  if (typeof node === "object") {
+    if (isProbablyCard(node)) {
+      acc.push(node);
+      return acc;
+    }
 
-  console.log("[Deck] FULL_TAROT_DECK length:", FULL_TAROT_DECK.length);
+    // Иначе считаем, что это группа (major, wands, cups, и т.п.)
+    Object.values(node).forEach((value) => collectCards(value, acc));
+    return acc;
+  }
+
+  return acc;
 }
+
+const rawCards = collectCards(rawDeck, []);
+
+// Нормализуем каждую найденную карту.
+export const FULL_TAROT_DECK = rawCards.map((raw) => normalizeCard(raw));
+
+// 📎 Диагностика — специально без import.meta.env.DEV, чтобы видеть везде.
+console.log(
+  "[Deck] rawDeck type:",
+  typeof rawDeck,
+  "isArray:",
+  Array.isArray(rawDeck)
+);
+if (rawDeck && typeof rawDeck === "object") {
+  console.log("[Deck] rawDeck top-level keys:", Object.keys(rawDeck));
+}
+console.log("[Deck] rawCards collected:", rawCards.length);
+console.log(
+  "[Deck] FULL_TAROT_DECK length:",
+  Array.isArray(FULL_TAROT_DECK) ? FULL_TAROT_DECK.length : "not array"
+);

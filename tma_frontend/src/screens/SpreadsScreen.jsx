@@ -140,7 +140,19 @@ export default function SpreadsScreen({
 
   // Payload: интерактивный режим с выбранными картами
   const buildPayload = () => {
-    const cardsCodes = pickedCards.map((c) => c.code);
+    // Коды карт с защитой, + dev-лог, что реально улетает
+    const cardCodes = pickedCards.map((c) => (c?.code != null ? c.code : null));
+
+    if (IS_DEV) {
+      console.log("[Spreads] interactive payload (raw)", {
+        spreadType,
+        useCustomQuestion,
+        category,
+        customQuestion,
+        cards: cardCodes,
+        rawPickedCards: pickedCards,
+      });
+    }
 
     if (spreadType === "one") {
       const payload = {
@@ -148,7 +160,7 @@ export default function SpreadsScreen({
         spread_type: "one",
         category: null, // бэк сам поставит "daily"
         question: null,
-        cards: cardsCodes,
+        cards: cardCodes,
       };
       spreadsLog("log", "buildPayload (one)", payload);
       return payload;
@@ -163,7 +175,7 @@ export default function SpreadsScreen({
         spread_type: "three",
         category: null, // при своём вопросе категорию не отправляем
         question: trimmedQuestion,
-        cards: cardsCodes,
+        cards: cardCodes,
       };
       spreadsLog("log", "buildPayload (three, customQuestion)", payload);
       return payload;
@@ -177,7 +189,7 @@ export default function SpreadsScreen({
       spread_type: "three",
       category: effectiveCategory,
       question: null,
-      cards: cardsCodes,
+      cards: cardCodes,
     };
     spreadsLog("log", "buildPayload (three, category)", payload);
     return payload;
