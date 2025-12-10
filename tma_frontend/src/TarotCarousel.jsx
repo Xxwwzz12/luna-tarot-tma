@@ -1,12 +1,8 @@
 // tma_frontend/src/TarotCarousel.jsx
-import React, {
-  useEffect,
-  useState,
-  useCallback,
-  useRef,
-} from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 
-const TOTAL_CARDS = 78; // fallback, если deck не передана
+const TOTAL_FALLBACK_CARDS = 78; // если deck не передана
+const LOOP_MULTIPLIER = 5; // во сколько раз размножаем колоду по кругу
 
 export default function TarotCarousel({
   mode = "viewer",
@@ -23,10 +19,10 @@ export default function TarotCarousel({
 
   return (
     <TarotCarouselPicker
+      deck={deck}
       maxCards={maxCards}
       pickedCount={pickedCount}
       onPick={onPick}
-      deck={deck}
       onPickCard={onPickCard}
     />
   );
@@ -75,57 +71,55 @@ function TarotCarouselViewer({ cards }) {
 }
 
 /* =======================
- * PICKER MODE — «барабан»
+ * PICKER MODE — «рулетка»
  * ======================= */
 
 function TarotCarouselPicker({
+  deck,
   maxCards,
   pickedCount,
   onPick,
-  deck,
   onPickCard,
 }) {
   const total = maxCards || 1;
   const count = pickedCount || 0;
   const isDone = count >= total;
 
-  // Все карты уже пойманы — ритуал не показываем.
-  // ВАЖНО: никаких хуков до этого return.
+  // Все карты уже пойманы — ритуал не показываем
   if (isDone) {
     return null;
   }
 
-  // 🔧 Нормализация deck:
-  // - если массив → берём как есть;
-  // - если объект { "0": {...}, "1": {...} } → Object.values(...);
-  // - иначе → null.
-  let deckArray = null;
-
+  // Нормализация deck → массив реальных карт
+  let deckArray = [];
   if (Array.isArray(deck)) {
-    deckArray = deck.length > 0 ? deck : null;
+    deckArray = deck;
   } else if (deck && typeof deck === "object") {
-    const vals = Object.values(deck).filter(Boolean);
-    deckArray = vals.length > 0 ? vals : null;
+    deckArray = Object.values(deck).filter(Boolean);
   }
 
-  // Лента реальных карт (или 78 заглушек, если deck нет)
-  const cardsArray =
-    deckArray && deckArray.length > 0
-      ? deckArray
-      : Array.from({ length: TOTAL_CARDS }, () => null);
+  const baseCount = deckArray.length || TOTAL_FALLBACK_CARDS;
 
-  const cardsCount = cardsArray.length;
+  // Виртуальное размножение колоды по кругу
+  const virtualCount = baseCount * LOOP_MULTIPLIER;
+  const virtualCards = Array.from({ length: virtualCount }, (_, i) => {
+    const realIndex = i % baseCount;
+    const card =
+      deckArray && deckArray.length > 0 ? deckArray[realIndex] : null;
+    return { realIndex, card };
+  });
 
-  // ==== ХУКИ (после раннего return isDone) ====
-
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [cardStep, setCardStep] = useState(64); // базовое значение
-  const [usedIndices, setUsedIndices] = useState([]);
+  // Состояния "положения" и выбранных индексов
+  const [currentVirtualIndex, setCurrentVirtualIndex] = useState(
+    baseCount * Math.floor(LOOP_MULTIPLIER / 2)
+  );
+  const [cardStep, setCardStep] = useState(64);
+  const [usedRealIndices, setUsedRealIndices] = useState([]);
 
   const wheelRef = useRef(null);
   const hasLoggedDeckRef = useRef(false);
 
-  // 🔍 Лог deck только один раз после первого прихода пропа
+  // Лог deck один раз
   useEffect(() => {
     if (hasLoggedDeckRef.current) return;
     hasLoggedDeckRef.current = true;
@@ -141,91 +135,151 @@ function TarotCarouselPicker({
     });
   }, [deck]);
 
-  // Измеряем шаг по ширине wheel-card (width + gap)
+  // Измеряем шаг карты (width + gap) по первой wheel-card
   useEffect(() => {
     if (!wheelRef.current) return;
     const first = wheelRef.current.querySelector(".wheel-card");
     if (first) {
       const rect = first.getBoundingClientRect();
-      setCardStep(rect.width + 8); // 8px — gap из CSS
+      setCardStep(rect.width + 8); // 8px — gap в CSS
     }
-  }, [cardsCount]);
+  }, [virtualCount]);
 
-  // Обновляем currentIndex по scrollLeft — чистый пользовательский свайп
+  // При маунте/смене колоды — стартуем из середины "кольца"
+  useEffect(() => {
+    if (!wheelRef.current || !cardStep) return;
+    const startIndex = baseCount * Math.floor(LOOP_MULTIPLIER / 2);
+    setCurrentVirtualIndex(startIndex);
+    wheelRef.current.scrollTo({
+      left: startIndex * cardStep,
+      // "instant" не обязателен, auto достаточно
+      behavior: "auto",
+    });
+  }, [baseCount, cardStep]);
+
+  // Слушаем скролл — обновляем currentVirtualIndex + делаем "бесконечность"
   const handleScroll = useCallback(() => {
     if (!wheelRef.current || !cardStep) return;
 
     const left = wheelRef.current.scrollLeft || 0;
     const rawIndex = Math.round(left / cardStep);
-    const safeIndex =
-      ((rawIndex % cardsCount) + cardsCount) % cardsCount;
 
-    setCurrentIndex(safeIndex);
-  }, [cardStep, cardsCount]);
+    // если ушли слишком влево — переносим ближе к центру
+    if (rawIndex < baseCount) {
+      const newIndex = rawIndex + baseCount * (LOOP_MULTIPLIER - 2);
+      wheelRef.current.scrollTo({
+        left: newIndex * cardStep,
+        behavior: "auto",
+      });
+      setCurrentVirtualIndex(newIndex);
+      return;
+    }
 
-  // Клик по конкретной рубашке — плавно центрируем её
-  const handleCardClick = useCallback(
-    (index) => {
-      setCurrentIndex(index);
-      if (wheelRef.current && cardStep) {
-        wheelRef.current.scrollTo({
-          left: index * cardStep,
-          behavior: "smooth",
-        });
-      }
-    },
-    [cardStep]
-  );
+    // если ушли слишком вправо — тоже возвращаем к центру
+    if (rawIndex > baseCount * (LOOP_MULTIPLIER - 1)) {
+      const newIndex = rawIndex - baseCount * (LOOP_MULTIPLIER - 2);
+      wheelRef.current.scrollTo({
+        left: newIndex * cardStep,
+        behavior: "auto",
+      });
+      setCurrentVirtualIndex(newIndex);
+      return;
+    }
 
-  // Выбор карты: не повторяем уже выбранные индексы
-  const handlePick = useCallback(() => {
-    if (!cardsCount) return;
+    setCurrentVirtualIndex(rawIndex);
+  }, [cardStep, baseCount]);
 
-    let safeIndex =
-      ((currentIndex % cardsCount) + cardsCount) % cardsCount;
-
-    // Если эту карту уже выбирали — берём первую доступную
-    if (usedIndices.includes(safeIndex)) {
-      const all = Array.from({ length: cardsCount }, (_, i) => i);
-      const available = all.filter((i) => !usedIndices.includes(i));
-      if (!available.length) {
-        // все карты уже выбраны — выходим
+  // Выбор карты по текущему/принудительному индексу
+  const handlePick = useCallback(
+    (forcedVirtualIndex) => {
+      if (!deckArray.length) {
+        // нет реальной колоды — чисто ритуальный onPick
+        if (typeof onPick === "function") {
+          onPick();
+        }
         return;
       }
-      safeIndex = available[0];
-    }
 
-    const selectedCard =
-      deckArray && deckArray.length > 0
-        ? deckArray[safeIndex]
-        : null;
+      if (typeof maxCards === "number" && pickedCount >= maxCards) {
+        return;
+      }
 
-    console.log("[Carousel] handlePick fired", {
-      currentIndex,
-      safeIndex,
-      cardsCount,
-      hasDeck: !!deckArray,
-      deckLength: deckArray ? deckArray.length : null,
-      selectedCode: selectedCard?.code,
-    });
+      const virtualIndex =
+        typeof forcedVirtualIndex === "number"
+          ? forcedVirtualIndex
+          : currentVirtualIndex;
 
-    if (selectedCard && typeof onPickCard === "function") {
-      onPickCard(selectedCard);
-    }
+      const realIndex = virtualIndex % deckArray.length;
 
-    setUsedIndices((prev) => [...prev, safeIndex]);
+      // если карту уже выбирали — берём первую доступную
+      const isUsed = usedRealIndices.includes(realIndex);
+      let chosenRealIndex = realIndex;
 
-    if (typeof onPick === "function") {
-      onPick();
-    }
-  }, [
-    currentIndex,
-    cardsCount,
-    deckArray,
-    usedIndices,
-    onPickCard,
-    onPick,
-  ]);
+      if (isUsed) {
+        const all = Array.from(
+          { length: deckArray.length },
+          (_, i) => i
+        );
+        const available = all.filter(
+          (i) => !usedRealIndices.includes(i)
+        );
+        if (!available.length) {
+          // всё уже выбрано — выходим
+          return;
+        }
+        chosenRealIndex = available[0];
+      }
+
+      const card = deckArray[chosenRealIndex];
+
+      console.log("[Carousel] handlePick fired", {
+        currentIndex: virtualIndex,
+        safeIndex: chosenRealIndex,
+        cardsCount: deckArray.length,
+        hasDeck: !!deckArray,
+        deckLength: deckArray.length,
+        selectedCode: card?.code,
+      });
+
+      if (card && typeof onPickCard === "function") {
+        onPickCard(card);
+      }
+
+      setUsedRealIndices((prev) => [...prev, chosenRealIndex]);
+
+      if (typeof onPick === "function") {
+        onPick();
+      }
+    },
+    [
+      currentVirtualIndex,
+      deckArray,
+      usedRealIndices,
+      maxCards,
+      pickedCount,
+      onPickCard,
+      onPick,
+    ]
+  );
+
+  // Клик по рубашке:
+  // 1) центрируем её
+  // 2) сразу считаем выбранной (аналог кнопки)
+  const handleCardClick = useCallback(
+    (virtualIndex) => {
+      if (!wheelRef.current || !cardStep) return;
+
+      setCurrentVirtualIndex(virtualIndex);
+      wheelRef.current.scrollTo({
+        left: virtualIndex * cardStep,
+        behavior: "smooth",
+      });
+
+      // сразу "поймать" карту по клику
+      handlePick(virtualIndex);
+    },
+    [cardStep, handlePick]
+  );
 
   return (
     <div className="tarot-carousel tarot-carousel-picker">
@@ -243,23 +297,38 @@ function TarotCarouselPicker({
           className="tarot-carousel-wheel"
           onScroll={handleScroll}
         >
-          {cardsArray.map((card, index) => (
-            <div
-              key={card?.code || card?.id || index}
-              className={
-                "wheel-card" +
-                (index === currentIndex ? " wheel-card-active" : "")
-              }
-              onClick={() => handleCardClick(index)}
-            />
-          ))}
+          {virtualCards.map(({ realIndex, card }, i) => {
+            const isActive = i === currentVirtualIndex;
+            const isPicked = usedRealIndices.includes(realIndex);
+
+            return (
+              <div
+                key={`${i}-${realIndex}-${card?.code || "x"}`}
+                className={
+                  "wheel-card" +
+                  (isActive ? " wheel-card-active" : "") +
+                  (isPicked ? " wheel-card-picked" : "")
+                }
+                onClick={() => handleCardClick(i)}
+              >
+                {isPicked && card && card.image_url && (
+                  <img
+                    src={card.image_url}
+                    alt={card.name || "Карта Таро"}
+                    className="wheel-card-face"
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
+      {/* Кнопка «Поймать карту» — дублирует поведение клика по активной рубашке */}
       <button
         type="button"
         className="button button-primary"
-        onClick={handlePick}
+        onClick={() => handlePick()}
       >
         Поймать карту
       </button>

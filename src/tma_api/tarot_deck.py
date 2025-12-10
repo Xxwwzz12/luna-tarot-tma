@@ -3,6 +3,7 @@
 import json
 import logging
 import random
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -12,23 +13,24 @@ _DECK: List[Dict[str, Any]] = []
 _CARDS_BY_CODE: Dict[str, Dict[str, Any]] = {}
 
 
-def _normalize_card(raw: dict[str, Any]) -> dict[str, Any]:
+def _slugify(value: str) -> str:
+    """
+    Простейший slugify: оставляем только a-z0-9 и заменяем всё остальное на "_".
+    """
+    value = value.lower()
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    value = value.strip("_")
+    return value or "card"
+
+
+def _normalize_card(raw: Dict[str, Any]) -> Dict[str, Any]:
     """
     Нормализуем карту:
-    - code: raw.code → raw.id → fallback по name (со warning-логом),
     - image_url: из JSON или по type + code,
     - остальные поля приводим к безопасным значениям.
+    Предполагается, что поле code уже выставлено в _load_deck().
     """
-    code = raw.get("code") or raw.get("id")
-    if not code:
-        name = str(raw.get("name", "")).strip().lower()
-        code = name.replace(" ", "_") or "unknown_card"
-        logger.warning(
-            "Card has no code and id, generated fallback code: %s", code
-        )
-
-    # гарантируем, что code — строка (важно, если id был числом)
-    code = str(code)
+    code = str(raw.get("code", ""))  # к этому моменту уже должен быть не пустым
 
     image_url = raw.get("image_url")
     if not image_url:
@@ -52,14 +54,49 @@ def _normalize_card(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _is_probably_card(obj: Any) -> bool:
+    """
+    Эвристика: похоже ли это на объект карты Таро.
+    """
+    if not isinstance(obj, dict):
+        return False
+
+    has_name_or_id = "name" in obj or "id" in obj
+    has_tarot_field = any(
+        key in obj for key in ("image_url", "meaning_upright", "meaning_reversed")
+    )
+    return bool(has_name_or_id and has_tarot_field)
+
+
+def _collect_cards(node: Any, cards: List[Dict[str, Any]]) -> None:
+    """
+    Рекурсивно обходит структуру JSON и собирает все объекты-карты.
+    Поддерживает:
+    - список карт [ {...}, {...}, ... ]
+    - любые вложенные словари/объекты вида { "major_arcana": [...], "minor_arcana": ... }
+    """
+    if isinstance(node, list):
+        for item in node:
+            _collect_cards(item, cards)
+    elif isinstance(node, dict):
+        if _is_probably_card(node):
+            cards.append(node)
+        else:
+            for v in node.values():
+                _collect_cards(v, cards)
+    # всё остальное (строки, числа и т.п.) игнорируем
+
+
 def _load_deck() -> None:
     """
     Загружает колоду из data/tarot_deck.json в _DECK и _CARDS_BY_CODE.
 
-    Поддерживает варианты структуры JSON:
-    1) Список карт: [ { ... }, { ... }, ... ]
-    2) Словарь: { "0": {...}, "1": {...} }
-    3) Словарь с вложенными списками: { "major_arcana": [..], "minor_arcana": [..] }
+    Поддерживает два основных варианта структуры JSON:
+    - список карт: [ {...}, {...}, ... ]
+    - словарь/вложенная структура: { "major_arcana": [...], "minor_arcana": [...], ... }
+
+    Рекурсивно собирает все объекты, "похожие на карту", гарантирует наличие code
+    и строит индекс по code.
     """
     global _DECK, _CARDS_BY_CODE
 
@@ -83,61 +120,40 @@ def _load_deck() -> None:
         _CARDS_BY_CODE = {}
         return
 
-    # Приводим к списку raw-карт
-    items: list[dict[str, Any]] = []
+    # Рекурсивно собираем все объекты, похожие на карты
+    raw_cards: List[Dict[str, Any]] = []
+    _collect_cards(data, raw_cards)
 
-    if isinstance(data, list):
-        # ожидаемый вариант: список объектов
-        for idx, raw in enumerate(data):
-            if not isinstance(raw, dict):
-                logger.warning(
-                    "Tarot deck item at index %s is not an object, skipping: %r",
-                    idx,
-                    raw,
-                )
-                continue
-            items.append(raw)
-
-    elif isinstance(data, dict):
-        # 🔧 НОВАЯ ЛОГИКА: dict может хранить или объект, или список объектов
-        for key, value in data.items():
-            if isinstance(value, dict):
-                # один объект карты
-                items.append(value)
-            elif isinstance(value, list):
-                # список карт (наш случай: major_arcana / minor_arcana)
-                for idx, raw in enumerate(value):
-                    if not isinstance(raw, dict):
-                        logger.warning(
-                            "Tarot deck item for key %r at index %s is not an object, "
-                            "skipping: %r",
-                            key,
-                            idx,
-                            raw,
-                        )
-                        continue
-                    items.append(raw)
-            else:
-                logger.warning(
-                    "Tarot deck item for key %r is neither object nor list, "
-                    "skipping: %r",
-                    key,
-                    value,
-                )
-
-    else:
-        logger.error(
-            "Tarot deck JSON must be a list or dict of objects, got %s",
-            type(data).__name__,
-        )
+    if not raw_cards:
+        logger.error("No tarot cards found in tarot_deck.json")
         _DECK = []
         _CARDS_BY_CODE = {}
         return
 
-    deck: list[dict[str, Any]] = []
-    cards_by_code: dict[str, dict[str, Any]] = {}
+    # Гарантируем наличие code у каждой карты
+    for obj in raw_cards:
+        raw_code = obj.get("code")
+        raw_id = obj.get("id")
 
-    for idx, raw in enumerate(items):
+        if raw_code is not None:
+            code = str(raw_code)
+        elif raw_id is not None:
+            code = str(raw_id)
+        else:
+            name = str(obj.get("name", "")).strip().lower() or "card"
+            code = _slugify(name)
+            logger.warning(
+                "Card has no code and id, generated fallback code: %s",
+                code,
+            )
+
+        obj["code"] = code
+
+    # Нормализуем и собираем индекс по code
+    deck: List[Dict[str, Any]] = []
+    cards_by_code: Dict[str, Dict[str, Any]] = {}
+
+    for idx, raw in enumerate(raw_cards):
         card = _normalize_card(raw)
         code = card["code"]
         if code in cards_by_code:
@@ -152,7 +168,11 @@ def _load_deck() -> None:
     _DECK = deck
     _CARDS_BY_CODE = cards_by_code
 
-    logger.info("Tarot deck loaded successfully (cards: %s)", len(_DECK))
+    logger.info(
+        "Tarot deck loaded: %d cards, %d codes",
+        len(_DECK),
+        len(_CARDS_BY_CODE),
+    )
 
 
 # Инициализация при импорте модуля
